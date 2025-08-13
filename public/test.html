@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face API Test</title>
+</head>
+<body>
+    <h1>Face API Test</h1>
+    <div id="status">Loading...</div>
+    
+    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script>
+        window.addEventListener('load', function() {
+            const statusDiv = document.getElementById('status');
+            
+            if (typeof faceapi === 'undefined') {
+                statusDiv.innerHTML = '❌ face-api.js not loaded';
+                console.error('face-api.js not available');
+            } else {
+                statusDiv.innerHTML = '✅ face-api.js loaded successfully';
+                console.log('face-api.js loaded:', faceapi);
+                
+                // Test model loading
+                faceapi.nets.tinyFaceDetector.loadFromUri('/models')
+                    .then(() => {
+                        statusDiv.innerHTML += '<br>✅ TinyFaceDetector model loaded';
+                        console.log('TinyFaceDetector loaded');
+                    })
+                    .catch(err => {
+                        statusDiv.innerHTML += '<br>❌ TinyFaceDetector model failed: ' + err.message;
+                        console.error('TinyFaceDetector failed:', err);
+                    });
+            }
+        });
+    </script>
+</body>
+</html> 

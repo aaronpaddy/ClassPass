@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facial Recognition Attendance System</title>
+    <link rel="stylesheet" href="attendance-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script>
+        // Fallback if primary CDN fails
+        window.addEventListener('load', function() {
+            if (typeof faceapi === 'undefined') {
+                console.log('Primary CDN failed, trying fallback...');
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js';
+                script.onload = function() {
+                    console.log('Fallback CDN loaded successfully');
+                    // Trigger a custom event to notify the main script
+                    window.dispatchEvent(new Event('faceapiLoaded'));
+                };
+                script.onerror = function() {
+                    console.error('Both CDNs failed to load face-api.js');
+                };
+                document.head.appendChild(script);
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-user-check"></i> Facial Recognition Attendance</h1>
+            <div class="header-controls">
+                <button id="registerBtn" class="btn btn-primary">
+                    <i class="fas fa-user-plus"></i> Register User
+                </button>
+                <button id="attendanceBtn" class="btn btn-success">
+                    <i class="fas fa-camera"></i> Take Attendance
+                </button>
+                <button id="viewRecordsBtn" class="btn btn-info">
+                    <i class="fas fa-chart-bar"></i> View Records
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <!-- Camera Section -->
+            <div class="camera-section">
+                <div class="camera-container">
+                    <video id="video" width="640" height="480" autoplay muted></video>
+                    <canvas id="canvas" width="640" height="480"></canvas>
+                    <div class="camera-overlay">
+                        <div class="face-detection-box" id="faceBox"></div>
+                        <div class="status-indicator" id="statusIndicator">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span class="status-text">Initializing...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="camera-controls">
+                    <button id="startCamera" class="btn btn-primary">
+                        <i class="fas fa-play"></i> Start Camera
+                    </button>
+                    <button id="stopCamera" class="btn btn-secondary" disabled>
+                        <i class="fas fa-stop"></i> Stop Camera
+                    </button>
+                    <button id="captureBtn" class="btn btn-success" disabled>
+                        <i class="fas fa-camera"></i> Capture Face
+                    </button>
+                </div>
+            </div>
+
+            <!-- Registration Form -->
+            <div class="registration-form" id="registrationForm" style="display: none;">
+                <h2><i class="fas fa-user-plus"></i> Register New User</h2>
+                <form id="userForm">
+                    <div class="form-group">
+                        <label for="name"><i class="fas fa-user"></i> Full Name:</label>
+                        <input type="text" id="name" name="name" required placeholder="Enter full name">
+                    </div>
+                    <div class="form-group">
+                        <label for="email"><i class="fas fa-envelope"></i> Email:</label>
+                        <input type="email" id="email" name="email" required placeholder="Enter email address">
+                    </div>
+                    <div class="form-group">
+                        <label for="id"><i class="fas fa-id-card"></i> Student/Employee ID:</label>
+                        <input type="text" id="id" name="id" required placeholder="Enter ID number">
+                    </div>
+                    <div class="form-group">
+                        <label for="department"><i class="fas fa-building"></i> Department:</label>
+                        <input type="text" id="department" name="department" required placeholder="Enter department">
+                    </div>
+                    <div class="captured-faces">
+                        <h3><i class="fas fa-images"></i> Captured Face Images</h3>
+                        <div id="faceImages" class="face-images-grid"></div>
+                        <p class="help-text">
+                            <i class="fas fa-info-circle"></i> 
+                            Capture at least 3 different angles of the face for better recognition
+                        </p>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Register User
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="cancelRegistration">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Attendance Section -->
+            <div class="attendance-section" id="attendanceSection" style="display: none;">
+                <h2><i class="fas fa-clock"></i> Take Attendance</h2>
+                
+                <!-- Location Selection -->
+                <div class="location-selection">
+                    <h3><i class="fas fa-map-marker-alt"></i> Select Class Location</h3>
+                    <div class="form-group">
+                        <label for="classLocation"><i class="fas fa-building"></i> Class Location:</label>
+                        <select id="classLocation" class="form-control" required>
+                            <option value="">Select a class location...</option>
+                        </select>
+                        <button id="refreshLocations" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="location-info" id="locationInfo" style="display: none;">
+                        <div class="location-details">
+                            <span class="location-name" id="locationName"></span>
+                            <span class="location-building" id="locationBuilding"></span>
+                            <span class="location-radius" id="locationRadius"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GPS Status -->
+                <div class="gps-status">
+                    <h3><i class="fas fa-satellite-dish"></i> GPS Location</h3>
+                    <div class="gps-controls">
+                        <button id="getLocation" class="btn btn-info">
+                            <i class="fas fa-location-arrow"></i> Get Current Location
+                        </button>
+                        <span id="gpsStatus" class="gps-indicator">
+                            <i class="fas fa-circle"></i> GPS not active
+                        </span>
+                    </div>
+                    <div class="coordinates" id="coordinates" style="display: none;">
+                        <span class="coordinate">
+                            <i class="fas fa-latitude"></i> Lat: <span id="latitude"></span>
+                        </span>
+                        <span class="coordinate">
+                            <i class="fas fa-longitude"></i> Lon: <span id="longitude"></span>
+                        </span>
+                        <span class="accuracy">
+                            <i class="fas fa-crosshairs"></i> Accuracy: <span id="accuracy"></span>m
+                        </span>
+                    </div>
+                </div>
+
+                <div class="attendance-info">
+                    <div class="current-time">
+                        <i class="fas fa-clock"></i>
+                        <span id="currentTime"></span>
+                    </div>
+                    <div class="recognition-status">
+                        <i class="fas fa-search"></i>
+                        <span id="recognitionStatus">Ready to take attendance</span>
+                    </div>
+                </div>
+                <div class="attendance-controls">
+                    <button id="startAttendance" class="btn btn-success" disabled>
+                        <i class="fas fa-play"></i> Start Recognition
+                    </button>
+                    <button id="stopAttendance" class="btn btn-secondary" disabled>
+                        <i class="fas fa-stop"></i> Stop Recognition
+                    </button>
+                </div>
+            </div>
+
+            <!-- Records Section -->
+            <div class="records-section" id="recordsSection" style="display: none;">
+                <h2><i class="fas fa-chart-bar"></i> Attendance Records</h2>
+                <div class="records-controls">
+                    <input type="date" id="dateFilter" class="form-control">
+                    <button id="filterRecords" class="btn btn-primary">
+                        <i class="fas fa-filter"></i> Filter
+                    </button>
+                    <button id="exportRecords" class="btn btn-success">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="records-table">
+                    <table id="recordsTable">
+                        <thead>
+                            <tr>
+                                <th><i class="fas fa-user"></i> Name</th>
+                                <th><i class="fas fa-id-card"></i> ID</th>
+                                <th><i class="fas fa-building"></i> Department</th>
+                                <th><i class="fas fa-calendar"></i> Date</th>
+                                <th><i class="fas fa-sign-in-alt"></i> Time In</th>
+                                <th><i class="fas fa-sign-out-alt"></i> Time Out</th>
+                                <th><i class="fas fa-check-circle"></i> Status</th>
+                                <th><i class="fas fa-map-marker-alt"></i> Location</th>
+                                <th><i class="fas fa-shield-alt"></i> Verified</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <!-- Notification System -->
+        <div id="notification" class="notification"></div>
+    </div>
+
+    <script src="attendance.js"></script>
+</body>
+</html> 
