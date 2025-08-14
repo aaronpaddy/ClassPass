@@ -2,6 +2,9 @@ class FacialRecognitionAttendance {
     constructor() {
         console.log('Initializing FacialRecognitionAttendance...');
         
+        // Check if user is authenticated
+        this.checkAuthentication();
+        
         this.video = document.getElementById('video');
         this.canvas = document.getElementById('canvas');
         this.ctx = this.canvas.getContext('2d');
@@ -28,9 +31,15 @@ class FacialRecognitionAttendance {
         
         // Location-related properties
         this.currentLocation = null;
-        this.selectedClassLocation = null;
+        this.selectedClass = null;
         this.classLocations = [];
         this.gpsWatchId = null;
+        
+        // Google Maps properties
+        this.googleMap = null;
+        this.userMarker = null;
+        this.classCircle = null;
+        this.mapInitialized = false;
         
         console.log('Initializing event listeners...');
         this.initializeEventListeners();
@@ -54,6 +63,9 @@ class FacialRecognitionAttendance {
         // this.loadClassLocations();
         
         console.log('FacialRecognitionAttendance initialized');
+        
+        // Initialize back to top button
+        this.initBackToTop();
     }
 
         async loadFaceAPI() {
@@ -75,6 +87,12 @@ class FacialRecognitionAttendance {
             if (typeof faceapi === 'undefined') {
                 throw new Error('face-api.js library not loaded after 30 seconds');
             }
+            
+            console.log('✅ face-api.js library loaded:', typeof faceapi);
+            console.log('🔍 Available faceapi methods:', Object.keys(faceapi));
+            console.log('🔍 Available nets:', Object.keys(faceapi.nets));
+            console.log('🔍 Available detection methods:', typeof faceapi.detectAllFaces);
+            console.log('🔍 Available descriptor methods:', typeof faceapi.euclideanDistance);
             
             console.log('face-api.js library loaded, loading models...');
             
@@ -238,17 +256,17 @@ class FacialRecognitionAttendance {
         }
 
         // Navigation buttons
-        const registerBtn = document.getElementById('registerBtn');
+        const setupFaceBtn = document.getElementById('setupFaceBtn');
         const attendanceBtn = document.getElementById('attendanceBtn');
         const viewRecordsBtn = document.getElementById('viewRecordsBtn');
         
-        if (registerBtn) {
-            registerBtn.addEventListener('click', () => {
-                console.log('Register button clicked');
+        if (setupFaceBtn) {
+            setupFaceBtn.addEventListener('click', () => {
+                console.log('Setup face button clicked');
                 this.showRegistrationForm();
             });
         } else {
-            console.error('Register button not found');
+            console.error('Setup face button not found');
         }
         
         if (attendanceBtn) {
@@ -267,6 +285,39 @@ class FacialRecognitionAttendance {
             });
         } else {
             console.error('View records button not found');
+        }
+        
+        // Logout button
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                console.log('Logout button clicked');
+                this.handleLogout();
+            });
+        } else {
+            console.error('Logout button not found');
+        }
+        
+        // Back to landing button
+        const backToLandingBtn = document.getElementById('backToLandingBtn');
+        if (backToLandingBtn) {
+            backToLandingBtn.addEventListener('click', () => {
+                console.log('Back to landing button clicked');
+                this.goBackToLanding();
+            });
+        } else {
+            console.error('Back to landing button not found');
+        }
+        
+        // Join class button
+        const joinClassBtn = document.getElementById('joinClassBtn');
+        if (joinClassBtn) {
+            joinClassBtn.addEventListener('click', () => {
+                console.log('Join class button clicked');
+                this.joinClass();
+            });
+        } else {
+            console.error('Join class button not found');
         }
 
         // Registration form
@@ -315,6 +366,13 @@ class FacialRecognitionAttendance {
         }
         if (getLocationBtn) {
             getLocationBtn.addEventListener('click', () => this.getCurrentLocation());
+        }
+
+        // Location check button
+        const checkLocationBtn = document.getElementById('checkLocationBtn');
+
+        if (checkLocationBtn) {
+            checkLocationBtn.addEventListener('click', () => this.checkCurrentLocation());
         }
 
         // Records controls
@@ -469,14 +527,22 @@ class FacialRecognitionAttendance {
             console.log('Capturing face...');
             
             // Always use full Face ID-style recognition now that all models are loaded
+            console.log('🔍 Starting face detection...');
             const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
                 .withFaceLandmarks()
                 .withFaceDescriptors();
             
+            console.log('🔍 Face detections result:', detections);
+            console.log('🔍 Number of detections:', detections.length);
+            
             let faceDescriptor = null;
             if (detections.length > 0) {
                 faceDescriptor = detections[0].descriptor;
-                console.log('Face captured with full biometric data');
+                console.log('✅ Face captured with descriptor:', faceDescriptor);
+                console.log('✅ Descriptor type:', typeof faceDescriptor);
+                console.log('✅ Descriptor length:', faceDescriptor ? faceDescriptor.length : 'null');
+            } else {
+                console.log('❌ No faces detected');
             }
             
             if (detections.length === 0) {
@@ -536,13 +602,52 @@ class FacialRecognitionAttendance {
     async handleRegistration(e) {
         e.preventDefault();
         
+        console.log('🔍 Form submission started');
+        console.log('🔍 Form element:', e.target);
+        
         if (this.capturedFaces.length < 3) {
             this.showNotification('Please capture at least 3 face images', 'error');
             return;
         }
 
+        // Get current user from session
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) {
+            this.showNotification('Please log in first', 'error');
+            return;
+        }
+        
+        const currentUser = JSON.parse(userStr);
+        console.log('🔍 Current user from session:', currentUser);
+        
+        // Check if form fields exist and have values
+        const nameField = document.getElementById('name');
+        const emailField = document.getElementById('email');
+        const idField = document.getElementById('id');
+        const departmentField = document.getElementById('department');
+        
+        console.log('🔍 Form fields found:', {
+            name: !!nameField,
+            email: !!emailField,
+            id: !!idField,
+            department: !!departmentField
+        });
+        
+        if (!nameField || !emailField || !idField || !departmentField) {
+            this.showNotification('Form fields not found. Please refresh the page.', 'error');
+            return;
+        }
+        
         const formData = new FormData(e.target);
+        
+        // Debug: Check what FormData is collecting
+        console.log('🔍 FormData entries:');
+        for (let [key, value] of formData.entries()) {
+            console.log(`  ${key}: ${value}`);
+        }
+        
         const userData = {
+            userId: currentUser.id, // Use existing user ID
             name: formData.get('name'),
             email: formData.get('email'),
             id: formData.get('id'),
@@ -550,8 +655,47 @@ class FacialRecognitionAttendance {
             faces: this.capturedFaces
         };
 
+        // Debug: Log what we're sending
+        console.log('🔍 Form data being sent:', userData);
+        console.log('🔍 FormData contents:', {
+            name: formData.get('name'),
+            email: formData.get('email'),
+            id: formData.get('id'),
+            department: formData.get('department')
+        });
+        console.log('🔍 Captured faces:', this.capturedFaces);
+        
+        // Debug: Check actual form field values
+        console.log('🔍 Actual form field values:', {
+            name: document.getElementById('name').value,
+            email: document.getElementById('email').value,
+            id: document.getElementById('id').value,
+            department: document.getElementById('department').value
+        });
+        
+        // Debug: Check if fields are disabled
+        console.log('🔍 Form field states:', {
+            nameDisabled: document.getElementById('name').disabled,
+            emailDisabled: document.getElementById('email').disabled,
+            idDisabled: document.getElementById('id').disabled,
+            departmentDisabled: document.getElementById('department').disabled
+        });
+        
+        // Check if any required fields are missing
+        if (!userData.name || !userData.email || !userData.id || !userData.department) {
+            console.error('❌ Missing required fields:', {
+                name: !!userData.name,
+                email: !!userData.email,
+                id: !!userData.id,
+                department: !!userData.department
+            });
+            this.showNotification('Please fill in all required fields', 'error');
+            return;
+        }
+
         try {
-            const response = await fetch('/api/register-user', {
+            // Use update-user endpoint instead of register-user
+            const response = await fetch('/api/update-user', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -560,7 +704,28 @@ class FacialRecognitionAttendance {
             });
 
             if (response.ok) {
-                this.showNotification('User registered successfully', 'success');
+                const result = await response.json();
+                
+                // Show success modal for face setup completion
+                this.showModal(
+                    'Face Recognition Setup Complete! 🎉',
+                    `
+                    <div style="text-align: center; padding: 20px 0;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">👤</div>
+                        <h4 style="color: #10b981; margin-bottom: 16px;">Face Recognition Ready!</h4>
+                        <p style="text-align: center; color: #94a3b8; margin-bottom: 20px;">
+                            <strong>${userData.name}</strong><br>
+                            Department: ${userData.department}<br>
+                            Faces Captured: ${this.capturedFaces.length}
+                        </p>
+                        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; margin-top: 20px;">
+                            <strong style="color: #10b981;">You can now use facial recognition for attendance!</strong>
+                        </div>
+                    </div>
+                    `,
+                    'success'
+                );
+                
                 this.hideRegistrationForm();
                 this.capturedFaces = [];
                 this.updateFaceImages();
@@ -570,9 +735,185 @@ class FacialRecognitionAttendance {
                 this.showNotification(error, 'error');
             }
         } catch (error) {
-            console.error('Registration error:', error);
-            this.showNotification('Error registering user', 'error');
+            console.error('Face setup error:', error);
+            this.showNotification('Error setting up face recognition', 'error');
         }
+    }
+    
+    handleLogout() {
+        // Clear session storage
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('role');
+        
+        // Show logout message
+        this.showNotification('Logged out successfully', 'success');
+        
+        // Redirect to landing page after a short delay
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 1500);
+    }
+    
+    goBackToLanding() {
+        // Clear session storage
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('role');
+        
+        // Redirect to landing page
+        window.location.href = '/';
+    }
+    
+    async joinClass() {
+        const classCode = document.getElementById('classCodeInput').value.trim().toUpperCase();
+        
+        if (!classCode) {
+            this.showNotification('Please enter a class code', 'error');
+            return;
+        }
+        
+        try {
+            // Get current user from session
+            const userStr = sessionStorage.getItem('user');
+            if (!userStr) {
+                this.showNotification('Please log in first', 'error');
+                return;
+            }
+            
+            const user = JSON.parse(userStr);
+            
+            // Enroll student in the class
+            const response = await fetch('/api/enroll-student', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    classCode: classCode,
+                    studentId: user.id
+                })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                this.selectedClass = result.class;
+                
+                // Display class information
+                this.displayClassInfo();
+                
+                // Update map with class location
+                this.updateMapWithClass();
+                
+                // Enable attendance button
+                this.updateAttendanceReadiness();
+                
+                this.showNotification(`Successfully joined ${result.class.name}!`, 'success');
+            } else {
+                const error = await response.text();
+                this.showNotification(error, 'error');
+            }
+        } catch (error) {
+            console.error('Join class error:', error);
+            this.showNotification('Error joining class', 'error');
+        }
+    }
+    
+    displayClassInfo() {
+        if (!this.selectedClass) return;
+        
+        // Update attendance section class info
+        document.getElementById('className').textContent = this.selectedClass.name;
+        document.getElementById('classCodeDisplay').textContent = this.selectedClass.code;
+        document.getElementById('teacherName').textContent = this.selectedClass.teacher_name || 'Unknown';
+        document.getElementById('classLocation').textContent = `${this.selectedClass.latitude.toFixed(6)}, ${this.selectedClass.longitude.toFixed(6)}`;
+        document.getElementById('attendanceRadius').textContent = `${this.selectedClass.attendance_radius}m`;
+        
+        document.getElementById('classInfo').style.display = 'block';
+        
+        // Update records section current class display
+        document.getElementById('currentClassName').textContent = this.selectedClass.name;
+        document.getElementById('currentClassCode').textContent = this.selectedClass.code;
+        document.getElementById('currentClassTeacher').textContent = this.selectedClass.teacher_name || 'Unknown';
+        document.getElementById('currentClassDisplay').style.display = 'block';
+    }
+    
+    updateMapWithClass() {
+        if (!this.selectedClass || !this.googleMap) return;
+        
+        // Clear existing markers and circles
+        if (this.classCircle) {
+            this.classCircle.setMap(null);
+        }
+        
+        // Add class location circle
+        this.classCircle = new google.maps.Circle({
+            strokeColor: '#60a5fa',
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: '#60a5fa',
+            fillOpacity: 0.1,
+            map: this.googleMap,
+            center: {
+                lat: this.selectedClass.latitude,
+                lng: this.selectedClass.longitude
+            },
+            radius: this.selectedClass.attendance_radius
+        });
+        
+        // Center map on class location
+        this.googleMap.setCenter({
+            lat: this.selectedClass.latitude,
+            lng: this.selectedClass.longitude
+        });
+        
+        // Update map status
+        this.updateMapStatus(`Class: ${this.selectedClass.name} - Radius: ${this.selectedClass.attendance_radius}m`);
+        
+        // Enable map controls
+        const zoomToClassBtn = document.getElementById('zoomToClass');
+        if (zoomToClassBtn) zoomToClassBtn.disabled = false;
+    }
+    
+    updateAttendanceReadiness() {
+        const startAttendanceBtn = document.getElementById('startAttendance');
+        if (!startAttendanceBtn) return;
+        
+        const hasLocation = this.currentLocation !== null;
+        const hasClass = this.selectedClass !== null;
+        const modelsReady = this.modelsLoaded;
+        
+        console.log('🔍 Checking attendance readiness:', {
+            currentLocation: this.currentLocation,
+            selectedClass: this.selectedClass,
+            hasGPS: this.hasGPS,
+            hasLocation: hasLocation,
+            modelsReady: modelsReady
+        });
+        
+        if (hasLocation && hasClass && modelsReady) {
+            startAttendanceBtn.disabled = false;
+            startAttendanceBtn.innerHTML = '<i class="fas fa-play"></i> Start ClassPass';
+            console.log('✅ Attendance button enabled. All requirements met.');
+        } else {
+            startAttendanceBtn.disabled = true;
+            startAttendanceBtn.innerHTML = '<i class="fas fa-play"></i> Start ClassPass';
+            console.log('❌ Attendance button disabled. Requirements not met.');
+        }
+    }
+    
+    checkAuthentication() {
+        const userStr = sessionStorage.getItem('user');
+        const role = sessionStorage.getItem('role');
+        
+        if (!userStr || role !== 'student') {
+            this.showNotification('Access denied. Please log in as a student.', 'error');
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+            return;
+        }
+        
+        const user = JSON.parse(userStr);
+        console.log('Authenticated as student:', user.name);
     }
 
     startAttendance() {
@@ -581,8 +922,8 @@ class FacialRecognitionAttendance {
             return;
         }
 
-        if (!this.currentLocation || !this.selectedClassLocation) {
-            this.showNotification('Please select a class location and get GPS location first', 'error');
+        if (!this.currentLocation || !this.selectedClass) {
+            this.showNotification('Please join a class and get GPS location first', 'error');
             return;
         }
 
@@ -673,23 +1014,29 @@ class FacialRecognitionAttendance {
             
             // Recognition criteria:
             // 1. High confidence (> 50%) - Lowered from 70%
-            // 2. Significant margin from second best (> 0.05) - Lowered from 0.1
+            // 2. Good margin from second best (> 0.05) OR single user scenario
             // 3. Distance is reasonable (< 0.8) - Increased from 0.6
             const isConfident = confidence > 0.5;
             const hasMargin = margin > 0.05;
+            const isSingleUser = userDistances.length === 1; // Special case for single user
             const isReasonable = bestMatch.distance < 0.8;
             
             console.log(`🎯 Criteria check:`);
             console.log(`  - High confidence: ${isConfident} (${(confidence * 100).toFixed(1)}% > 50%)`);
             console.log(`  - Good margin: ${hasMargin} (${margin.toFixed(4)} > 0.05)`);
+            console.log(`  - Single user scenario: ${isSingleUser} (${userDistances.length} users total)`);
             console.log(`  - Reasonable distance: ${isReasonable} (${bestMatch.distance.toFixed(4)} < 0.8)`);
             
-            if (isConfident && hasMargin && isReasonable) {
+            // For single user, we only need confidence and reasonable distance
+            // For multiple users, we also need margin
+            const isRecognized = isConfident && isReasonable && (isSingleUser || hasMargin);
+            
+            if (isRecognized) {
                 console.log(`✅ RECOGNIZED: ${bestMatch.user.name} with ${(confidence * 100).toFixed(1)}% confidence`);
                 return bestMatch.user;
             } else {
                 console.log(`❌ NOT RECOGNIZED: Criteria not met`);
-                console.log(`❌ Failed criteria: confident=${isConfident}, margin=${hasMargin}, reasonable=${isReasonable}`);
+                console.log(`❌ Failed criteria: confident=${isConfident}, margin=${hasMargin}, singleUser=${isSingleUser}, reasonable=${isReasonable}`);
                 return null;
             }
             
@@ -703,18 +1050,19 @@ class FacialRecognitionAttendance {
         try {
             console.log('🎯 Attempting to mark attendance for:', user.name);
             console.log('📍 Current location:', this.currentLocation);
-            console.log('🏫 Selected class location:', this.selectedClassLocation);
+            console.log('🏫 Selected class:', this.selectedClass);
             
-            // Validate location before marking attendance
-            const locationValidation = await this.validateLocation();
-            console.log('🔍 Location validation result:', locationValidation);
+            if (!this.selectedClass) {
+                this.showNotification('Please join a class first', 'error');
+                return;
+            }
             
-            if (!locationValidation.valid) {
-                this.showNotification(locationValidation.message, 'error');
+            if (!this.currentLocation) {
+                this.showNotification('Please get your GPS location first', 'error');
                 return;
             }
 
-            console.log('✅ Location validated, proceeding with attendance marking...');
+            console.log('✅ Location and class validated, proceeding with attendance marking...');
 
             const response = await fetch('/api/mark-attendance', {
                 method: 'POST',
@@ -726,7 +1074,7 @@ class FacialRecognitionAttendance {
                     timestamp: new Date().toISOString(),
                     latitude: this.currentLocation.latitude,
                     longitude: this.currentLocation.longitude,
-                    classLocationId: this.selectedClassLocation.id
+                    classCode: this.selectedClass.code
                 })
             });
 
@@ -741,10 +1089,40 @@ class FacialRecognitionAttendance {
 
             const result = await response.json();
             console.log('✅ Attendance marked successfully:', result);
-            this.showNotification(`${result.status} for ${user.name}`, 'success');
+            
+            // Show success modal for important actions
+            this.showModal(
+                'Attendance Marked Successfully! 🎉',
+                `
+                <div style="text-align: center; padding: 20px 0;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+                    <h4 style="color: #10b981; margin-bottom: 16px;">${result.status} for ${user.name}</h4>
+                    <p style="text-align: left; color: #94a3b8; margin-bottom: 20px;">
+                        <strong>Class:</strong> ${result.class || this.selectedClass?.name || 'Unknown'}<br>
+                        <strong>Time:</strong> ${new Date().toLocaleTimeString()}<br>
+                        <strong>Date:</strong> ${new Date().toLocaleDateString()}<br>
+                        <strong>Distance:</strong> ${result.distance || 'Unknown'}m (within ${this.selectedClass?.attendance_radius || 'class'} radius)<br>
+                        <strong>Location Verified:</strong> ${result.locationVerified ? '✅ Yes' : '❌ No'}
+                    </p>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; margin-top: 20px;">
+                        <strong style="color: #10b981;">Attendance Recorded Successfully!</strong>
+                    </div>
+                </div>
+                `,
+                'success'
+            );
             
             // Update last attendance mark
             this.lastAttendanceMark[user.id] = Date.now();
+            
+            // Stop face recognition after successful attendance marking
+            this.stopAttendance();
+            
+            // Hide user selection to prevent multiple clicks
+            this.hideUserSelection();
+            
+            // Update recognition status to show completion
+            this.updateRecognitionStatus('Attendance marked successfully - Recognition stopped');
             
             // Refresh attendance records
             this.loadRecords();
@@ -758,6 +1136,45 @@ class FacialRecognitionAttendance {
     showRegistrationForm() {
         this.hideAllSections();
         document.getElementById('registrationForm').style.display = 'block';
+        
+        // Pre-fill form with existing user data
+        this.prefillRegistrationForm();
+        
+        // Auto-scroll to registration form with smooth animation
+        const registrationForm = document.getElementById('registrationForm');
+        if (registrationForm) {
+            setTimeout(() => {
+                registrationForm.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start',
+                    inline: 'nearest'
+                });
+            }, 100);
+        }
+    }
+
+    prefillRegistrationForm() {
+        // Get current user from session
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) return;
+        
+        const user = JSON.parse(userStr);
+        
+        // Pre-fill the form fields
+        const nameInput = document.getElementById('name');
+        const emailInput = document.getElementById('email');
+        const idInput = document.getElementById('id');
+        const departmentInput = document.getElementById('department');
+        
+        if (nameInput) nameInput.value = user.name || '';
+        if (emailInput) emailInput.value = user.email || '';
+        if (idInput) idInput.value = user.user_id || '';
+        if (departmentInput) departmentInput.value = user.department || '';
+        
+        // Make email field readonly since it can't be changed
+        if (emailInput) emailInput.readOnly = true;
+        
+        console.log('✅ Pre-filled registration form with user data:', user);
     }
 
     hideRegistrationForm() {
@@ -772,69 +1189,53 @@ class FacialRecognitionAttendance {
         document.getElementById('attendanceSection').style.display = 'block';
         console.log('✅ Attendance section displayed');
         
-        // Debug: Check if the section is actually visible
+        // Auto-scroll to attendance section with smooth animation
         const attendanceSection = document.getElementById('attendanceSection');
-        console.log('🔍 Attendance section element:', attendanceSection);
-        console.log('🔍 Attendance section display style:', attendanceSection.style.display);
-        console.log('🔍 Attendance section computed display:', window.getComputedStyle(attendanceSection).display);
+        if (attendanceSection) {
+            setTimeout(() => {
+                attendanceSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start',
+                    inline: 'nearest'
+                });
+            }, 100);
+        }
+        
+        // Load enrolled classes for the student
+        this.loadEnrolledClasses();
         
         this.startGPSWatching(); // Start GPS watching when attendance section is shown
         console.log('📍 Started GPS watching');
         
-        // Wait a bit for the DOM to update, then load class locations
+        // Try to get location automatically after a short delay
         setTimeout(() => {
-            console.log('⏰ Timeout completed, checking DOM state...');
-            
-            // Check if the dropdown exists now
-            const select = document.getElementById('classLocation');
-            console.log('🔍 Select element after timeout:', select);
-            
-            if (select) {
-                console.log('✅ Select element found, loading class locations...');
-                this.loadClassLocations(); // Ensure class locations are loaded
-                console.log('🔄 Called loadClassLocations after DOM update');
-            } else {
-                console.error('❌ Select element still not found after timeout!');
-                console.log('🔍 Available elements in attendance section:');
-                const attendanceSection = document.getElementById('attendanceSection');
-                if (attendanceSection) {
-                    console.log('🔍 Attendance section children:', attendanceSection.children);
-                    
-                    // Check for location-selection div specifically
-                    const locationSection = attendanceSection.querySelector('.location-selection');
-                    console.log('🔍 Location selection div:', locationSection);
-                    if (locationSection) {
-                        console.log('🔍 Location selection div children:', locationSection.children);
-                        const selectInLocation = locationSection.querySelector('#classLocation');
-                        console.log('🔍 Select element in location section:', selectInLocation);
-                        
-                        // Check CSS properties
-                        const computedStyle = window.getComputedStyle(locationSection);
-                        console.log('🔍 Location section CSS:', {
-                            display: computedStyle.display,
-                            visibility: computedStyle.visibility,
-                            opacity: computedStyle.opacity,
-                            height: computedStyle.height,
-                            width: computedStyle.width
-                        });
-                    }
-                    
-                    console.log('🔍 Looking for elements with "classLocation" ID...');
-                    const allElements = attendanceSection.querySelectorAll('*');
-                    allElements.forEach(el => {
-                        if (el.id && el.id.includes('class')) {
-                            console.log('🔍 Found element with class-related ID:', el.id, el);
-                        }
-                    });
-                }
+            if (!this.currentLocation) {
+                console.log('📍 Attempting automatic location detection...');
+                this.getCurrentLocation();
             }
-        }, 200); // Increased timeout to 200ms
+        }, 1000);
+        
+        // Initialize location validation
+        console.log('📍 Initializing location validation...');
+        this.initializeLocationValidation();
     }
 
     showRecordsSection() {
         this.hideAllSections();
         document.getElementById('recordsSection').style.display = 'block';
         this.loadRecords();
+        
+        // Auto-scroll to records section with smooth animation
+        const recordsSection = document.getElementById('recordsSection');
+        if (recordsSection) {
+            setTimeout(() => {
+                recordsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start',
+                    inline: 'nearest'
+                });
+            }, 100);
+        }
     }
 
     hideAllSections() {
@@ -951,7 +1352,14 @@ class FacialRecognitionAttendance {
 
     async loadRecords() {
         try {
-            const response = await fetch('/api/get-attendance-records');
+            // Get current user from session
+            const userStr = sessionStorage.getItem('user');
+            if (!userStr) return;
+            
+            const currentUser = JSON.parse(userStr);
+            
+            // Get attendance records for the current user
+            const response = await fetch(`/api/get-attendance-records?userId=${currentUser.id}`);
             if (!response.ok) return;
             
             const records = await response.json();
@@ -967,26 +1375,31 @@ class FacialRecognitionAttendance {
 
         tbody.innerHTML = '';
 
+        if (records.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #94a3b8; padding: 32px;">
+                        <i class="fas fa-info-circle" style="font-size: 24px; margin-bottom: 8px;"></i><br>
+                        No attendance records found yet
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
         records.forEach(record => {
             const row = document.createElement('tr');
-            
-            const locationInfo = record.classLocation ? 
-                `${record.classLocation.class_name} - ${record.classLocation.building} ${record.classLocation.room}` : 
-                'N/A';
             
             const verificationStatus = record.locationVerified ? 
                 '<span class="verified-badge"><i class="fas fa-check-circle"></i> Verified</span>' : 
                 '<span class="unverified-badge"><i class="fas fa-times-circle"></i> Not Verified</span>';
 
             row.innerHTML = `
-                <td>${record.name}</td>
-                <td>${record.userId}</td>
-                <td>${record.department}</td>
                 <td>${record.date}</td>
                 <td>${record.timeIn || 'N/A'}</td>
                 <td>${record.timeOut || 'N/A'}</td>
-                <td>${record.status}</td>
-                <td>${locationInfo}</td>
+                <td>${record.className}</td>
+                <td>${record.locationVerified ? 'Within radius' : 'Outside radius'}</td>
                 <td>${verificationStatus}</td>
             `;
             
@@ -996,13 +1409,20 @@ class FacialRecognitionAttendance {
 
     async filterRecords() {
         const dateFilter = document.getElementById('dateFilter').value;
+        
+        // Get current user from session
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) return;
+        
+        const currentUser = JSON.parse(userStr);
+        
         if (!dateFilter) {
             this.loadRecords();
             return;
         }
 
         try {
-            const response = await fetch(`/api/get-attendance-records?date=${dateFilter}`);
+            const response = await fetch(`/api/get-attendance-records?date=${dateFilter}&userId=${currentUser.id}`);
             if (!response.ok) return;
             
             const records = await response.json();
@@ -1125,12 +1545,36 @@ class FacialRecognitionAttendance {
         this.selectedClassLocation = this.classLocations.find(loc => loc.id == locationId);
         console.log('🏫 Selected class location:', this.selectedClassLocation);
         
-        if (this.selectedClassLocation) {
+        if (this.selectedClass) {
             this.showLocationInfo();
-            this.checkAttendanceReadiness();
+            this.updateAttendanceReadiness();
+            
+            // Update Google Maps if available
+            if (this.mapInitialized) {
+                this.updateClassCircle();
+                this.updateMapStatus(`Class location: ${this.selectedClassLocation.class_name}`);
+                
+                // Center map on class location
+                const classLatLng = new google.maps.LatLng(
+                    this.selectedClassLocation.latitude,
+                    this.selectedClassLocation.longitude
+                );
+                this.googleMap.setCenter(classLatLng);
+                this.googleMap.setZoom(17);
+            }
         } else {
             this.hideLocationInfo();
-            this.checkAttendanceReadiness();
+            this.updateAttendanceReadiness();
+            
+            // Clear class circle from map
+            if (this.classCircle) {
+                this.classCircle.setMap(null);
+                this.classCircle = null;
+            }
+            
+            if (this.mapInitialized) {
+                this.updateMapStatus('Select a class location to see the map');
+            }
         }
     }
 
@@ -1170,9 +1614,9 @@ class FacialRecognitionAttendance {
             
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: false, // Changed from true to false for better compatibility
-                    timeout: 30000, // Increased from 10000 to 30000 (30 seconds)
-                    maximumAge: 300000 // Increased from 60000 to 300000 (5 minutes)
+                    enableHighAccuracy: false, // Better compatibility
+                    timeout: 60000, // Increased to 60 seconds
+                    maximumAge: 600000 // Increased to 10 minutes (cache longer)
                 });
             });
 
@@ -1191,7 +1635,18 @@ class FacialRecognitionAttendance {
 
             this.updateGPSStatus('GPS Active', 'active');
             this.showCoordinates();
-            this.checkAttendanceReadiness();
+            this.updateAttendanceReadiness();
+            
+            // Update Google Maps if available
+            if (this.mapInitialized) {
+                this.updateUserMarker();
+                this.updateMapStatus('Location updated - You are marked with a blue dot');
+                
+                // If class is selected, validate location
+                if (this.selectedClass) {
+                    await this.validateLocationWithGoogleMaps();
+                }
+            }
             
             console.log('✅ Current location updated:', this.currentLocation);
             this.showNotification('Location obtained successfully', 'success');
@@ -1208,8 +1663,10 @@ class FacialRecognitionAttendance {
         if (!navigator.geolocation) return;
 
         try {
-            this.gpsWatchId = navigator.geolocation.watchPosition(
+            // First, try to get current position immediately
+            navigator.geolocation.getCurrentPosition(
                 (position) => {
+                    console.log('📍 Got immediate GPS position');
                     this.currentLocation = {
                         latitude: position.coords.latitude,
                         longitude: position.coords.longitude,
@@ -1217,16 +1674,62 @@ class FacialRecognitionAttendance {
                     };
                     this.updateGPSStatus('GPS Active', 'active');
                     this.showCoordinates();
-                    this.checkAttendanceReadiness();
+                    this.updateAttendanceReadiness();
+                    
+                    // Update Google Maps if available
+                    if (this.mapInitialized) {
+                        this.updateUserMarker();
+                        this.updateMapStatus('Location obtained automatically!');
+                        
+                        // If class is selected, validate location
+                        if (this.selectedClass) {
+                            this.validateLocationWithGoogleMaps();
+                        }
+                    }
+                },
+                (error) => {
+                    console.log('📍 Immediate GPS failed, will try watching:', error.message);
+                    this.updateGPSStatus('GPS Waiting...', 'loading');
+                },
+                {
+                    enableHighAccuracy: false,
+                    timeout: 30000,
+                    maximumAge: 600000 // 10 minutes cache
+                }
+            );
+
+            // Then start watching for position changes
+            this.gpsWatchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    console.log('📍 GPS position updated via watch');
+                    this.currentLocation = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+                    this.updateGPSStatus('GPS Active', 'active');
+                    this.showCoordinates();
+                    this.updateAttendanceReadiness();
+                    
+                    // Update Google Maps if available
+                    if (this.mapInitialized) {
+                        this.updateUserMarker();
+                        this.updateMapStatus('Location updated automatically');
+                        
+                        // If class is selected, validate location
+                        if (this.selectedClass) {
+                            this.validateLocationWithGoogleMaps();
+                        }
+                    }
                 },
                 (error) => {
                     console.error('GPS watch error:', error);
                     this.updateGPSStatus('GPS Error', 'error');
                 },
                 {
-                    enableHighAccuracy: false, // Changed from true to false
-                    timeout: 30000, // Increased from 10000 to 30000
-                    maximumAge: 300000 // Increased from 30000 to 300000
+                    enableHighAccuracy: false,
+                    timeout: 30000,
+                    maximumAge: 300000
                 }
             );
         } catch (error) {
@@ -1305,13 +1808,24 @@ class FacialRecognitionAttendance {
         if (!this.currentLocation || !this.selectedClassLocation) {
             console.log('❌ Missing location data:', {
                 hasCurrentLocation: !!this.currentLocation,
-                hasSelectedClassLocation: !!this.selectedClassLocation
+                hasSelectedLocation: !!this.selectedClassLocation
             });
             return { valid: false, message: 'Location data not available' };
         }
 
+        // Use Google Maps for precise location validation
+        if (this.mapInitialized && typeof google !== 'undefined') {
+            console.log('🗺️ Using Google Maps for location validation...');
+            return await this.validateLocationWithGoogleMaps();
+        } else {
+            console.log('📡 Falling back to server validation...');
+            return await this.validateLocationWithServer();
+        }
+    }
+    
+    async validateLocationWithServer() {
         try {
-            console.log('📡 Sending location validation request...');
+            console.log('📡 Sending location validation request to server...');
             const response = await fetch('/api/validate-location', {
                 method: 'POST',
                 headers: {
@@ -1350,13 +1864,94 @@ class FacialRecognitionAttendance {
     }
 
     showNotification(message, type = 'info') {
-        const notification = document.getElementById('notification');
-        notification.textContent = message;
-        notification.className = `notification ${type} show`;
+        const container = document.getElementById('notificationContainer');
+        if (!container) return;
         
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.innerHTML = `
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+            <span>${message}</span>
+        `;
+        
+        container.appendChild(notification);
+        
+        // Show notification with slide-in animation
+        setTimeout(() => notification.classList.add('show'), 100);
+        
+        // Auto-remove notification after 6 seconds
         setTimeout(() => {
             notification.classList.remove('show');
-        }, 3000);
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 400);
+        }, 6000);
+    }
+    
+    showModal(title, content, type = 'info') {
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        const modalClose = document.getElementById('modalClose');
+        
+        if (!modalOverlay || !modalTitle || !modalBody || !modalClose) return;
+        
+        modalTitle.textContent = title;
+        modalBody.innerHTML = content;
+        
+        // Add icon based on type
+        const icon = type === 'success' ? 'check-circle' : 
+                    type === 'error' ? 'exclamation-circle' : 
+                    type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+        
+        modalTitle.innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+        
+        modalOverlay.style.display = 'flex';
+        
+        // Close modal when clicking close button or overlay
+        const closeModal = () => {
+            modalOverlay.style.display = 'none';
+        };
+        
+        modalClose.onclick = closeModal;
+        modalOverlay.onclick = (e) => {
+            if (e.target === modalOverlay) closeModal();
+        };
+        
+        // Auto-close after 8 seconds for info modals
+        if (type === 'warning') {
+            setTimeout(closeModal, 8000);
+        }
+    }
+    
+    initBackToTop() {
+        const backToTopBtn = document.getElementById('backToTop');
+        if (!backToTopBtn) return;
+        
+        // Show/hide button based on scroll position
+        const toggleBackToTop = () => {
+            if (window.pageYOffset > 300) {
+                backToTopBtn.classList.add('show');
+            } else {
+                backToTopBtn.classList.remove('show');
+            }
+        };
+        
+        // Scroll to top when clicked
+        backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+        
+        // Listen for scroll events
+        window.addEventListener('scroll', toggleBackToTop);
+        
+        // Initial check
+        toggleBackToTop();
     }
 
     startRecognition() {
@@ -1367,15 +1962,20 @@ class FacialRecognitionAttendance {
                 
                 try {
                     // Always use full Face ID-style recognition now that all models are loaded
-                    console.log('Attempting face detection and recognition...');
+                    console.log('🔍 Attempting face detection and recognition...');
                     const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
                         .withFaceLandmarks()
                         .withFaceDescriptors();
                     
-                    console.log(`Detected ${detections.length} faces`);
+                    console.log('🔍 Face detections result:', detections);
+                    console.log('🔍 Number of detections:', detections.length);
                     
                     if (detections.length > 0) {
-                        console.log('Face detected with biometric data, attempting automatic recognition...');
+                        console.log('✅ Face detected with biometric data, attempting automatic recognition...');
+                        console.log('🔍 First detection:', detections[0]);
+                        console.log('🔍 Has descriptor:', !!detections[0].descriptor);
+                        console.log('🔍 Descriptor type:', typeof detections[0].descriptor);
+                        
                         this.updateRecognitionStatus(`Face detected - Attempting automatic recognition...`);
                         
                         // Try to automatically recognize the person
@@ -1387,11 +1987,11 @@ class FacialRecognitionAttendance {
                             this.showUserSelection(recognizedUser);
                         } else {
                             console.log(`🎯 NO RECOGNITION: Face not recognized`);
-                            this.updateRecognitionStatus('Face not recognized - Manual selection required');
+                            this.updateRecognitionStatus('Face not recognized');
                             this.showUserSelection();
                         }
                     } else {
-                        console.log('No faces detected in frame');
+                        console.log('❌ No faces detected in frame');
                         this.updateRecognitionStatus('No face detected');
                         this.hideUserSelection();
                     }
@@ -1403,6 +2003,466 @@ class FacialRecognitionAttendance {
             
             this.updateRecognitionStatus('Attendance monitoring active - Face detected, click "Mark Attendance" to confirm');
         });
+    }
+
+    // Google Maps Integration Methods
+    
+    initializeGoogleMaps() {
+        console.log('🗺️ Initializing Google Maps...');
+        
+        // Wait for Google Maps to be fully loaded
+        const checkGoogleMaps = () => {
+            if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+                console.log('⏳ Google Maps not ready yet, waiting...');
+                setTimeout(checkGoogleMaps, 500);
+                return;
+            }
+            
+            console.log('✅ Google Maps API detected, initializing map...');
+            
+            try {
+                const mapElement = document.getElementById('googleMap');
+                if (!mapElement) {
+                    console.error('❌ Map element not found');
+                    return;
+                }
+                
+                // Initialize the map with simpler options
+                this.googleMap = new google.maps.Map(mapElement, {
+                    zoom: 15,
+                    center: { lat: 0, lng: 0 },
+                    mapTypeId: google.maps.MapTypeId.ROADMAP,
+                    zoomControl: true,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: true
+                });
+                
+                this.mapInitialized = true;
+                console.log('✅ Google Maps initialized successfully');
+                this.updateMapStatus('Map ready - Select a class location');
+                
+                // Add map click listener for debugging
+                this.googleMap.addListener('click', (event) => {
+                    console.log('🗺️ Map clicked at:', event.latLng.lat(), event.latLng.lng());
+                });
+                
+            } catch (error) {
+                console.error('❌ Error initializing Google Maps:', error);
+                this.showMapError('Failed to initialize map: ' + error.message);
+            }
+        };
+        
+        // Start checking for Google Maps
+        checkGoogleMaps();
+        
+        // Set a timeout to show fallback if Google Maps doesn't load
+        setTimeout(() => {
+            if (!this.mapInitialized) {
+                console.log('⏰ Google Maps timeout - showing fallback mode');
+                this.showMapFallback();
+            }
+        }, 10000); // 10 second timeout
+    }
+    
+    showMapFallback() {
+        const mapElement = document.getElementById('googleMap');
+        if (mapElement) {
+            mapElement.innerHTML = `
+                <div class="map-fallback">
+                    <div class="fallback-header">
+                        <i class="fas fa-map-marked-alt"></i>
+                        <h4>Location Validation Mode</h4>
+                    </div>
+                    <div class="fallback-content">
+                        <p>Google Maps is not available, but location validation still works!</p>
+                        <div class="fallback-features">
+                            <div class="feature">
+                                <i class="fas fa-check-circle"></i>
+                                <span>GPS location tracking</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-check-circle"></i>
+                                <span>Distance calculations</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-check-circle"></i>
+                                <span>Attendance validation</span>
+                            </div>
+                        </div>
+                        <div class="api-key-info">
+                            <strong>To enable Google Maps:</strong>
+                            <ol>
+                                <li>Get API key from <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                                <li>Replace 'YOUR_API_KEY' in attendance.html</li>
+                                <li>Refresh the page</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    getMapStyles() {
+        return [
+            {
+                featureType: 'poi',
+                elementType: 'labels',
+                stylers: [{ visibility: 'off' }]
+            },
+            {
+                featureType: 'transit',
+                elementType: 'labels',
+                stylers: [{ visibility: 'off' }]
+            }
+        ];
+    }
+    
+    updateMapStatus(message) {
+        const mapStatus = document.getElementById('mapStatus');
+        if (mapStatus) {
+            const span = mapStatus.querySelector('span');
+            if (span) span.textContent = message;
+        }
+    }
+    
+    showMapError(message) {
+        const mapElement = document.getElementById('googleMap');
+        if (mapElement) {
+            mapElement.innerHTML = `
+                <div class="map-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <div>${message}</div>
+                    <div style="margin: 16px 0; padding: 16px; background: rgba(0,0,0,0.05); border-radius: 8px;">
+                        <strong>Fallback Mode:</strong> Using basic location validation
+                    </div>
+                    <button onclick="location.reload()" class="btn btn-primary" style="margin-top: 16px;">
+                        <i class="fas fa-redo"></i> Reload Page
+                    </button>
+                </div>
+            `;
+        }
+    }
+    
+    centerMapOnUser() {
+        if (!this.googleMap || !this.currentLocation) {
+            this.showNotification('No location data available', 'error');
+            return;
+        }
+        
+        const userLatLng = new google.maps.LatLng(
+            this.currentLocation.latitude,
+            this.currentLocation.longitude
+        );
+        
+        this.googleMap.setCenter(userLatLng);
+        this.googleMap.setZoom(18);
+        
+        console.log('🗺️ Centered map on user location');
+        this.updateMapStatus('Centered on your location');
+    }
+    
+    zoomToClassLocation() {
+        if (!this.googleMap || !this.selectedClassLocation) {
+            this.showNotification('No class location selected', 'error');
+            return;
+        }
+        
+        const classLatLng = new google.maps.LatLng(
+            this.selectedClassLocation.latitude,
+            this.selectedClassLocation.longitude
+        );
+        
+        this.googleMap.setCenter(classLatLng);
+        this.googleMap.setZoom(17);
+        
+        console.log('🗺️ Zoomed to class location');
+        this.updateMapStatus('Showing class area');
+    }
+    
+    updateUserMarker() {
+        if (!this.googleMap || !this.currentLocation) return;
+        
+        const userLatLng = new google.maps.LatLng(
+            this.currentLocation.latitude,
+            this.currentLocation.longitude
+        );
+        
+        // Remove existing marker
+        if (this.userMarker) {
+            this.userMarker.setMap(null);
+        }
+        
+        // Create new user marker
+        this.userMarker = new google.maps.Marker({
+            position: userLatLng,
+            map: this.googleMap,
+            title: 'Your Location',
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#4285F4',
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2
+            }
+        });
+        
+        console.log('📍 Updated user marker on map');
+    }
+    
+    updateClassCircle() {
+        if (!this.googleMap || !this.selectedClassLocation) return;
+        
+        const classLatLng = new google.maps.LatLng(
+            this.selectedClassLocation.latitude,
+            this.selectedClassLocation.longitude
+        );
+        
+        // Remove existing circle
+        if (this.classCircle) {
+            this.classCircle.setMap(null);
+        }
+        
+        // Create class location circle
+        this.classCircle = new google.maps.Circle({
+            strokeColor: '#FF0000',
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: '#FF0000',
+            fillOpacity: 0.1,
+            map: this.googleMap,
+            center: classLatLng,
+            radius: this.selectedClassLocation.radius_meters || 50
+        });
+        
+        console.log('🏫 Updated class circle on map');
+    }
+    
+    async validateLocationWithGoogleMaps() {
+        if (!this.currentLocation || !this.selectedClassLocation) {
+            return { valid: false, message: 'Location data not available' };
+        }
+        
+        try {
+            const userLatLng = new google.maps.LatLng(
+                this.currentLocation.latitude,
+                this.currentLocation.longitude
+            );
+            
+            const classLatLng = new google.maps.LatLng(
+                this.selectedClassLocation.latitude,
+                this.selectedClassLocation.longitude
+            );
+            
+            // Use Google's precise distance calculation
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(
+                userLatLng,
+                classLatLng
+            );
+            
+            const radius = this.selectedClassLocation.radius_meters || 50;
+            const isWithinRadius = distance <= radius;
+            
+            // Update map display
+            this.updateUserMarker();
+            this.updateClassCircle();
+            
+            // Update validation display
+            this.updateLocationValidation(isWithinRadius, distance, radius);
+            
+            return {
+                valid: isWithinRadius,
+                message: isWithinRadius ? 
+                    'Location verified successfully' : 
+                    `You must be within ${radius}m of the class. Current distance: ${Math.round(distance)}m`,
+                distance: Math.round(distance),
+                radius: radius
+            };
+            
+        } catch (error) {
+            console.error('❌ Error validating location with Google Maps:', error);
+            return { valid: false, message: 'Location validation failed' };
+        }
+    }
+    
+    updateLocationValidation(isValid, distance, radius) {
+        const validationDiv = document.getElementById('locationValidation');
+        const validationMessage = document.getElementById('validationMessage');
+        const distanceToClass = document.getElementById('distanceToClass');
+        const classRadius = document.getElementById('classRadius');
+        
+        if (validationDiv && validationMessage && distanceToClass && classRadius) {
+            validationDiv.style.display = 'flex';
+            
+            if (isValid) {
+                validationMessage.textContent = 'Location verified successfully';
+                validationMessage.style.color = '#27ae60';
+                validationDiv.style.background = 'rgba(39, 174, 96, 0.1)';
+                validationDiv.style.borderColor = 'rgba(39, 174, 96, 0.3)';
+            } else {
+                validationMessage.textContent = 'Location not verified';
+                validationMessage.style.color = '#e74c3c';
+                validationDiv.style.background = 'rgba(231, 74, 60, 0.1)';
+                validationDiv.style.borderColor = 'rgba(231, 74, 60, 0.3)';
+            }
+            
+            distanceToClass.textContent = distance;
+            classRadius.textContent = radius;
+        }
+        
+        // Enable/disable location check button
+        const checkLocationBtn = document.getElementById('checkLocationBtn');
+        
+        if (checkLocationBtn) checkLocationBtn.disabled = !this.currentLocation;
+    }
+
+    checkCurrentLocation() {
+        if (!this.currentLocation) {
+            this.showNotification('No location data available. Please enable GPS.', 'error');
+            return;
+        }
+
+        if (!this.selectedClass) {
+            this.showNotification('Please join a class first to check location.', 'info');
+            return;
+        }
+
+        // Calculate distance to class
+        const distance = this.calculateDistance(
+            this.currentLocation.latitude,
+            this.currentLocation.longitude,
+            this.selectedClass.latitude,
+            this.selectedClass.longitude
+        );
+
+        const isWithinRadius = distance <= this.selectedClass.attendance_radius;
+        
+        // Show location validation
+        this.updateLocationValidation(isWithinRadius, distance, this.selectedClass.attendance_radius);
+        
+        // Update status info
+        const statusInfo = document.getElementById('statusInfo');
+        if (statusInfo) {
+            if (isWithinRadius) {
+                statusInfo.innerHTML = `
+                    <i class="fas fa-check-circle" style="color: #10b981;"></i>
+                    <span>Location verified! You're within ${this.selectedClass.attendance_radius}m of ${this.selectedClass.name}</span>
+                `;
+            } else {
+                statusInfo.innerHTML = `
+                    <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i>
+                    <span>Too far from class. Distance: ${Math.round(distance)}m (max: ${this.selectedClass.attendance_radius}m)</span>
+                `;
+            }
+        }
+
+        this.showNotification(
+            isWithinRadius ? 
+                `Location verified! Distance: ${Math.round(distance)}m` : 
+                `Too far from class. Distance: ${Math.round(distance)}m`,
+            isWithinRadius ? 'success' : 'warning'
+        );
+    }
+
+    // Simple location validation without Google Maps
+    initializeLocationValidation() {
+        console.log('📍 Initializing location validation...');
+        this.locationValidationReady = true;
+        console.log('✅ Location validation ready');
+    }
+
+    // Load enrolled classes for the current student
+    async loadEnrolledClasses() {
+        try {
+            // Get current user from session
+            const userStr = sessionStorage.getItem('user');
+            if (!userStr) return;
+            
+            const user = JSON.parse(userStr);
+            
+            // Fetch enrolled classes from the server
+            const response = await fetch(`/api/get-enrolled-classes?studentId=${user.id}`);
+            if (!response.ok) {
+                console.error('Failed to load enrolled classes');
+                return;
+            }
+            
+            const enrolledClasses = await response.json();
+            console.log('📚 Loaded enrolled classes:', enrolledClasses);
+            
+            // Display enrolled classes
+            this.displayEnrolledClasses(enrolledClasses);
+            
+        } catch (error) {
+            console.error('Error loading enrolled classes:', error);
+        }
+    }
+
+    // Display enrolled classes in the UI
+    displayEnrolledClasses(classes) {
+        const enrolledClassesDiv = document.getElementById('enrolledClasses');
+        const enrolledClassesList = document.getElementById('enrolledClassesList');
+        
+        if (!enrolledClassesDiv || !enrolledClassesList) return;
+        
+        if (classes.length === 0) {
+            // No enrolled classes, hide the section
+            enrolledClassesDiv.style.display = 'none';
+            return;
+        }
+        
+        // Show the enrolled classes section
+        enrolledClassesDiv.style.display = 'block';
+        
+        // Clear existing list
+        enrolledClassesList.innerHTML = '';
+        
+        // Add each enrolled class
+        classes.forEach(classInfo => {
+            const classCard = document.createElement('div');
+            classCard.className = 'enrolled-class-card';
+            classCard.onclick = () => this.selectEnrolledClass(classInfo);
+            
+            classCard.innerHTML = `
+                <div class="enrolled-class-info">
+                    <h4>${classInfo.name}</h4>
+                    <p><strong>Code:</strong> ${classInfo.code}</p>
+                    <p><strong>Teacher:</strong> ${classInfo.teacher_name}</p>
+                </div>
+                <div class="enrolled-class-actions">
+                    <button class="btn btn-success btn-sm">
+                        <i class="fas fa-play"></i> Select
+                    </button>
+                </div>
+            `;
+            
+            enrolledClassesList.appendChild(classCard);
+        });
+    }
+
+    // Handle selecting an enrolled class
+    selectEnrolledClass(classInfo) {
+        console.log('🎯 Selected enrolled class:', classInfo);
+        
+        // Set the selected class
+        this.selectedClass = classInfo;
+        
+        // Display class information
+        this.displayClassInfo();
+        
+        // Update map with class location
+        this.updateMapWithClass();
+        
+        // Enable attendance button
+        this.updateAttendanceReadiness();
+        
+        // Show success message
+        this.showNotification(`Selected ${classInfo.name}! Ready for attendance.`, 'success');
+        
+        // Hide the enrolled classes section since a class is selected
+        document.getElementById('enrolledClasses').style.display = 'none';
     }
 }
 

@@ -34,79 +34,372 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
 
 // Initialize database tables
 function initializeDatabase() {
+    console.log('🔄 Initializing database...');
+    
     db.serialize(() => {
-        // Users table for facial recognition
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            user_id TEXT UNIQUE NOT NULL,
-            department TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
-
-        // User faces table
-        db.run(`CREATE TABLE IF NOT EXISTS user_faces (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            face_image TEXT NOT NULL,
-            face_descriptor TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )`);
-
-        // Class locations table for attendance validation
-        db.run(`CREATE TABLE IF NOT EXISTS class_locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            class_name TEXT NOT NULL,
-            building TEXT NOT NULL,
-            room TEXT NOT NULL,
-            latitude REAL NOT NULL,
-            longitude REAL NOT NULL,
-            radius_meters INTEGER DEFAULT 50,
-            department TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
-
-        // Attendance records table with location validation
-        db.run(`CREATE TABLE IF NOT EXISTS attendance_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            class_location_id INTEGER,
-            date DATE NOT NULL,
-            time_in DATETIME,
-            time_out DATETIME,
-            status TEXT DEFAULT 'present',
-            latitude REAL,
-            longitude REAL,
-            location_verified BOOLEAN DEFAULT FALSE,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (class_location_id) REFERENCES class_locations (id)
-        )`);
-
-        // Insert default class locations if none exist
-        db.get('SELECT COUNT(*) as count FROM class_locations', (err, row) => {
+        // Check if tables exist, create only if they don't
+        console.log('🔍 Checking existing tables...');
+        
+        // Check if users table exists
+        db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'", (err, row) => {
             if (err) {
-                console.error('Error checking class locations:', err);
-            } else if (row.count === 0) {
-                // Insert some default class locations
-                const defaultLocations = [
-                    ['Computer Science Lab', 'Engineering Building', 'Room 101', 40.7128, -74.0060, 50, 'Computer Science'],
-                    ['Mathematics Classroom', 'Science Building', 'Room 205', 40.7128, -74.0060, 50, 'Mathematics'],
-                    ['Physics Lab', 'Science Building', 'Room 301', 40.7128, -74.0060, 50, 'Physics']
-                ];
-                
-                defaultLocations.forEach(location => {
-                    db.run('INSERT INTO class_locations (class_name, building, room, latitude, longitude, radius_meters, department) VALUES (?, ?, ?, ?, ?, ?, ?)', location);
-                });
-                console.log('Default class locations inserted');
+                console.error('Error checking tables:', err);
+                return;
             }
+            
+            if (row) {
+                console.log('✅ Tables already exist, skipping initialization');
+                return;
+            }
+            
+            console.log('📝 Tables not found, creating fresh database...');
+            
+            // Create fresh users table
+            db.run(`CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('teacher', 'student')),
+                user_id TEXT,
+                department TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`, (err) => {
+                if (err) {
+                    console.error('❌ Error creating users table:', err);
+                } else {
+                    console.log('✅ Users table created successfully');
+                }
+            });
+            
+            // Create user faces table
+            db.run(`CREATE TABLE user_faces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                face_image TEXT NOT NULL,
+                face_descriptor TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )`, (err) => {
+                if (err) {
+                    console.error('❌ Error creating user_faces table:', err);
+                } else {
+                    console.log('✅ User_faces table created successfully');
+                }
+            });
+            
+            // Create classes table
+            db.run(`CREATE TABLE classes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                code TEXT UNIQUE NOT NULL,
+                description TEXT,
+                attendance_radius INTEGER DEFAULT 30,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                teacher_id INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (teacher_id) REFERENCES users (id)
+            )`, (err) => {
+                if (err) {
+                    console.error('❌ Error creating classes table:', err);
+                } else {
+                    console.log('✅ Classes table created successfully');
+                }
+            });
+            
+            // Create class enrollments table
+            db.run(`CREATE TABLE class_enrollments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                class_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (class_id) REFERENCES classes (id),
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(class_id, user_id)
+            )`, (err) => {
+                if (err) {
+                    console.error('❌ Error creating class_enrollments table:', err);
+                } else {
+                    console.log('✅ Class_enrollments table created successfully');
+                }
+            });
+            
+            // Create attendance records table
+            db.run(`CREATE TABLE attendance_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                class_id INTEGER,
+                date DATE NOT NULL,
+                time_in DATETIME,
+                time_out DATETIME,
+                status TEXT DEFAULT 'present',
+                latitude REAL,
+                longitude REAL,
+                location_verified BOOLEAN DEFAULT FALSE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (class_id) REFERENCES classes (id)
+            )`, (err) => {
+                if (err) {
+                    console.error('❌ Error creating attendance_records table:', err);
+                } else {
+                    console.log('✅ Attendance_records table created successfully');
+                }
+            });
+            
+            console.log('🎉 Database initialization complete!');
         });
     });
 }
 
+
+
 // API Routes
+
+// Authentication endpoints
+app.post('/api/register', (req, res) => {
+    const { name, email, password, role, department, studentId } = req.body;
+    
+    console.log('Registration attempt:', { name, email, role, department, studentId });
+    
+    if (!name || !email || !password || !role) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    if (role === 'teacher' && !department) {
+        return res.status(400).json({ error: 'Department is required for teachers' });
+    }
+    
+    if (role === 'student' && !studentId) {
+        return res.status(400).json({ error: 'Student ID is required for students' });
+    }
+    
+    // Hash password (in production, use bcrypt)
+    const salt = process.env.PASSWORD_SALT || 'default-salt-change-in-production';
+    const hashedPassword = Buffer.from(password + salt).toString('base64');
+    
+    const userData = [name, email, hashedPassword, role];
+    let query = 'INSERT INTO users (name, email, password, role';
+    let placeholders = 'VALUES (?, ?, ?, ?';
+    
+    if (role === 'teacher') {
+        query += ', department';
+        placeholders += ', ?';
+        userData.push(department);
+    } else {
+        query += ', user_id';
+        placeholders += ', ?';
+        userData.push(studentId);
+    }
+    
+    query += ') ' + placeholders + ')';
+    
+    console.log('SQL Query:', query);
+    console.log('User Data:', userData);
+    
+    db.run(query, userData, function(err) {
+        if (err) {
+            console.error('Database error details:', err);
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(400).json({ error: 'Email already exists' });
+            }
+            if (err.message.includes('CHECK constraint failed')) {
+                return res.status(400).json({ error: 'Invalid role specified' });
+            }
+            return res.status(500).json({ 
+                error: 'Database error', 
+                details: err.message,
+                code: err.code 
+            });
+        }
+        
+        console.log('User created successfully with ID:', this.lastID);
+        res.json({
+            message: 'User registered successfully',
+            userId: this.lastID
+        });
+    });
+});
+
+// Update user profile and add face recognition data
+app.post('/api/update-user', (req, res) => {
+    const { userId, name, email, id, department, faces } = req.body;
+    
+    if (!userId || !name || !email || !faces || faces.length === 0) {
+        return res.status(400).json({ error: 'User ID, name, email, and faces are required' });
+    }
+    
+    // Update user profile
+        db.run('UPDATE users SET name = ?, user_id = ?, department = ? WHERE id = ?', 
+            [name, id, department, userId], function(err) {
+            if (err) {
+                console.error('Error updating user:', err);
+                return res.status(500).json({ error: 'Error updating user profile' });
+            }
+            
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            
+            // Add face recognition data
+            const facePromises = faces.map(face => {
+                return new Promise((resolve, reject) => {
+                    db.run('INSERT INTO user_faces (user_id, face_image, face_descriptor) VALUES (?, ?, ?)', 
+                        [userId, face.image, JSON.stringify(face.descriptor)], function(err) {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(this.lastID);
+                        }
+                    });
+                });
+            });
+            
+            Promise.all(facePromises)
+                .then(() => {
+                    res.json({ 
+                        success: true, 
+                        message: 'User profile and face recognition updated successfully',
+                        userId: userId
+                    });
+                })
+                .catch(err => {
+                    console.error('Error adding face data:', err);
+                    res.status(500).json({ error: 'Error adding face recognition data' });
+                });
+        });
+    });
+
+
+app.post('/api/login', (req, res) => {
+    const { email, password, role } = req.body;
+    
+    if (!email || !password || !role) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Hash password for comparison
+    const salt = process.env.PASSWORD_SALT || 'default-salt-change-in-production';
+    const hashedPassword = Buffer.from(password + salt).toString('base64');
+    
+    db.get('SELECT * FROM users WHERE email = ? AND password = ? AND role = ?', 
+        [email, hashedPassword, role], (err, row) => {
+        if (err) {
+            console.error('Login error:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!row) {
+            return res.status(401).json({ error: 'Invalid credentials or role' });
+        }
+        
+        // Don't send password in response
+        const { password: _, ...user } = row;
+        
+        res.json({
+            message: 'Login successful',
+            user
+        });
+    });
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+    // In a real app, you would invalidate JWT tokens here
+    // For now, just return success since we're using sessionStorage
+    res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Get enrolled classes for a student
+app.get('/api/get-enrolled-classes', (req, res) => {
+    const { studentId } = req.query;
+    
+    if (!studentId) {
+        return res.status(400).json({ error: 'Student ID is required' });
+    }
+    
+    try {
+        // Get all classes the student is enrolled in
+        db.all(`
+            SELECT c.*, u.name as teacher_name 
+            FROM classes c 
+            JOIN users u ON c.teacher_id = u.id 
+            JOIN class_enrollments ce ON c.id = ce.class_id 
+            WHERE ce.user_id = ?
+            ORDER BY c.name
+        `, [studentId], (err, rows) => {
+            if (err) {
+                console.error('Error fetching enrolled classes:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            res.json(rows || []);
+        });
+    } catch (error) {
+        console.error('Get enrolled classes error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Enroll student in a class using class code
+app.post('/api/enroll-student', (req, res) => {
+    const { classCode, studentId } = req.body;
+    
+    if (!classCode || !studentId) {
+        return res.status(400).json({ error: 'Class code and student ID are required' });
+    }
+    
+    // First, find the class by code
+    db.get('SELECT c.*, u.name as teacher_name FROM classes c JOIN users u ON c.teacher_id = u.id WHERE c.code = ?', 
+        [classCode.toUpperCase()], (err, classRow) => {
+        if (err) {
+            console.error('Error finding class:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!classRow) {
+            return res.status(404).json({ error: 'Class not found with this code' });
+        }
+        
+        // Check if student is already enrolled
+        db.get('SELECT * FROM class_enrollments WHERE class_id = ? AND user_id = ?', 
+            [classRow.id, studentId], (err, enrollmentRow) => {
+            if (err) {
+                console.error('Error checking enrollment:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            if (enrollmentRow) {
+                return res.status(400).json({ error: 'Student is already enrolled in this class' });
+            }
+            
+            // Enroll the student
+            db.run('INSERT INTO class_enrollments (class_id, user_id) VALUES (?, ?)', 
+                [classRow.id, studentId], function(err) {
+                if (err) {
+                    console.error('Error enrolling student:', err);
+                    return res.status(500).json({ error: 'Error enrolling student' });
+                }
+                
+                res.json({
+                    success: true,
+                    message: 'Student enrolled successfully',
+                    class: {
+                        id: classRow.id,
+                        name: classRow.name,
+                        code: classRow.code,
+                        description: classRow.description,
+                        attendance_radius: classRow.attendance_radius,
+                        latitude: classRow.latitude,
+                        longitude: classRow.longitude,
+                        teacher_name: classRow.teacher_name
+                    }
+                });
+            });
+        });
+    });
+});
 
 // Haversine formula to calculate distance between two coordinates
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -226,54 +519,58 @@ app.get('/api/get-users', (req, res) => {
     });
 });
 
-// Mark attendance
+// Mark attendance using class code and GPS validation
 app.post('/api/mark-attendance', (req, res) => {
     try {
-        const { userId, timestamp, latitude, longitude, classLocationId } = req.body;
+        const { userId, timestamp, latitude, longitude, classCode } = req.body;
         const date = new Date(timestamp).toISOString().split('T')[0];
         const time = new Date(timestamp).toISOString();
 
-        // Validate location if provided
-        let locationVerified = false;
-        if (latitude && longitude && classLocationId) {
-            // Get class location details
-            db.get('SELECT * FROM class_locations WHERE id = ?', [classLocationId], (err, location) => {
-                if (err) {
-                    return res.status(500).json({ error: 'Database error' });
-                }
-                if (!location) {
-                    return res.status(404).json({ error: 'Class location not found' });
-                }
-
-                // Calculate distance between user location and class location
-                const distance = calculateDistance(
-                    latitude, longitude,
-                    location.latitude, location.longitude
-                );
-
-                locationVerified = distance <= location.radius_meters;
-
-                if (!locationVerified) {
-                    return res.status(400).json({ 
-                        error: 'Location verification failed', 
-                        message: `You must be within ${location.radius_meters} meters of ${location.class_name} to mark attendance. Current distance: ${Math.round(distance)} meters.`,
-                        distance: Math.round(distance),
-                        radius: location.radius_meters
-                    });
-                }
-
-                // Continue with attendance marking
-                processAttendance();
-            });
-        } else {
-            // No location data provided, continue without validation
-            processAttendance();
+        if (!userId || !timestamp || !latitude || !longitude || !classCode) {
+            return res.status(400).json({ error: 'All fields are required' });
         }
 
-        function processAttendance() {
+        // First, find the class by code and check if student is enrolled
+        db.get(`
+            SELECT c.*, u.name as teacher_name 
+            FROM classes c 
+            JOIN users u ON c.teacher_id = u.id 
+            JOIN class_enrollments ce ON c.id = ce.class_id 
+            WHERE c.code = ? AND ce.user_id = ?
+        `, [classCode.toUpperCase(), userId], (err, classRow) => {
+            if (err) {
+                console.error('Error finding class:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            if (!classRow) {
+                return res.status(404).json({ error: 'Class not found or you are not enrolled' });
+            }
+
+            // Calculate distance between user location and class location
+            const distance = calculateDistance(
+                latitude, longitude,
+                classRow.latitude, classRow.longitude
+            );
+
+            const locationVerified = distance <= classRow.attendance_radius;
+
+            if (!locationVerified) {
+                return res.status(400).json({ 
+                    error: 'Location verification failed', 
+                    message: `You must be within ${classRow.attendance_radius} meters of ${classRow.name} to mark attendance. Current distance: ${Math.round(distance)} meters.`,
+                    distance: Math.round(distance),
+                    radius: classRow.attendance_radius,
+                    classLocation: {
+                        lat: classRow.latitude,
+                        lng: classRow.longitude
+                    }
+                });
+            }
+
             // Check if attendance record exists for today
-            db.get('SELECT * FROM attendance_records WHERE user_id = ? AND date = ?', 
-                [userId, date], (err, row) => {
+            db.get('SELECT * FROM attendance_records WHERE user_id = ? AND class_id = ? AND date = ?', 
+                [userId, classRow.id, date], (err, row) => {
                 if (err) {
                     return res.status(500).json({ error: 'Database error' });
                 }
@@ -289,7 +586,9 @@ app.post('/api/mark-attendance', (req, res) => {
                             res.json({ 
                                 status: 'Time out recorded', 
                                 recordId: row.id,
-                                locationVerified: locationVerified
+                                locationVerified: locationVerified,
+                                distance: Math.round(distance),
+                                class: classRow.name
                             });
                         });
                     } else {
@@ -297,20 +596,22 @@ app.post('/api/mark-attendance', (req, res) => {
                     }
                 } else {
                     // Create new record (time in)
-                    db.run('INSERT INTO attendance_records (user_id, class_location_id, date, time_in, latitude, longitude, location_verified) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                        [userId, classLocationId, date, time, latitude, longitude, locationVerified], function(err) {
+                    db.run('INSERT INTO attendance_records (user_id, class_id, date, time_in, latitude, longitude, location_verified) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+                        [userId, classRow.id, date, time, latitude, longitude, locationVerified], function(err) {
                         if (err) {
                             return res.status(500).json({ error: 'Error creating attendance record' });
                         }
                         res.json({ 
                             status: 'Time in recorded', 
                             recordId: this.lastID,
-                            locationVerified: locationVerified
+                            locationVerified: locationVerified,
+                            distance: Math.round(distance),
+                            class: classRow.name
                         });
                     });
                 }
             });
-        }
+        });
     } catch (error) {
         console.error('Attendance marking error:', error);
         res.status(500).json({ error: 'Server error' });
@@ -319,18 +620,28 @@ app.post('/api/mark-attendance', (req, res) => {
 
 // Get attendance records
 app.get('/api/get-attendance-records', (req, res) => {
-    const { date } = req.query;
+    const { date, userId } = req.query;
     let query = `
-        SELECT ar.*, u.name, u.user_id, u.department, cl.class_name, cl.building, cl.room
+        SELECT ar.*, u.name, u.user_id, u.department, c.name as class_name
         FROM attendance_records ar
         JOIN users u ON ar.user_id = u.id
-        LEFT JOIN class_locations cl ON ar.class_location_id = cl.id
+        LEFT JOIN classes c ON ar.class_id = c.id
     `;
     let params = [];
+    let whereConditions = [];
+
+    if (userId) {
+        whereConditions.push('ar.user_id = ?');
+        params.push(userId);
+    }
 
     if (date) {
-        query += ' WHERE ar.date = ?';
+        whereConditions.push('ar.date = ?');
         params.push(date);
+    }
+
+    if (whereConditions.length > 0) {
+        query += ' WHERE ' + whereConditions.join(' AND ');
     }
 
     query += ' ORDER BY ar.date DESC, ar.time_in DESC';
@@ -340,22 +651,53 @@ app.get('/api/get-attendance-records', (req, res) => {
             return res.status(500).json({ error: 'Database error' });
         }
 
-        const records = rows.map(row => ({
-            id: row.id,
-            name: row.name,
-            userId: row.user_id,
-            department: row.department,
-            date: row.date,
-            timeIn: row.time_in ? new Date(row.time_in).toLocaleTimeString() : null,
-            timeOut: row.time_out ? new Date(row.time_out).toLocaleTimeString() : null,
-            status: row.status,
-            locationVerified: row.location_verified,
-            classLocation: row.class_name ? {
-                class_name: row.class_name,
-                building: row.building,
-                room: row.room
-            } : null
-        }));
+        const records = rows.map(row => {
+            // Parse date safely
+            let parsedDate = 'Invalid Date';
+            try {
+                if (row.date) {
+                    const dateObj = new Date(row.date);
+                    if (!isNaN(dateObj.getTime())) {
+                        parsedDate = dateObj.toLocaleDateString();
+                    }
+                }
+            } catch (e) {
+                console.log('Date parsing error:', e);
+            }
+
+            // Parse time safely
+            let parsedTimeIn = 'N/A';
+            let parsedTimeOut = 'N/A';
+            try {
+                if (row.time_in) {
+                    const timeInObj = new Date(row.time_in);
+                    if (!isNaN(timeInObj.getTime())) {
+                        parsedTimeIn = timeInObj.toLocaleTimeString();
+                    }
+                }
+                if (row.time_out) {
+                    const timeOutObj = new Date(row.time_out);
+                    if (!isNaN(timeOutObj.getTime())) {
+                        parsedTimeOut = timeOutObj.toLocaleTimeString();
+                    }
+                }
+            } catch (e) {
+                console.log('Time parsing error:', e);
+            }
+
+            return {
+                id: row.id,
+                name: row.name || 'Unknown Student',
+                userId: row.user_id || 'N/A',
+                department: row.department || 'N/A',
+                date: parsedDate,
+                timeIn: parsedTimeIn,
+                timeOut: parsedTimeOut,
+                status: row.status || 'Present',
+                locationVerified: row.location_verified || false,
+                className: row.class_name || 'Unknown Class'
+            };
+        });
 
         res.json(records);
     });
@@ -551,9 +893,276 @@ app.get('/attendance', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'attendance.html'));
 });
 
-// Default route
+// Default route - serve landing page
 app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Admin dashboard route
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Student attendance route
+app.get('/attendance', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'attendance.html'));
+});
+
+// New API endpoints for the improved system
+
+// Create a new class
+app.post('/api/create-class', (req, res) => {
+    const { name, code, description, attendanceRadius, latitude, longitude, teacherId } = req.body;
+    
+    if (!name || !code || !latitude || !longitude || !teacherId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    db.run('INSERT INTO classes (name, code, description, attendance_radius, latitude, longitude, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, code.toUpperCase(), description, attendanceRadius || 30, latitude, longitude, teacherId],
+        function(err) {
+            if (err) {
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ error: 'Class code already exists' });
+                }
+                console.error('Error creating class:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            res.json({
+                id: this.lastID,
+                name,
+                code: code.toUpperCase(),
+                message: 'Class created successfully'
+            });
+        }
+    );
+});
+
+// Get classes for a specific teacher
+app.get('/api/get-classes', (req, res) => {
+    const { teacherId } = req.query;
+    
+    if (!teacherId) {
+        return res.status(400).json({ error: 'Teacher ID is required' });
+    }
+    
+    const query = `
+        SELECT c.*, COUNT(ce.user_id) as studentCount
+        FROM classes c
+        LEFT JOIN class_enrollments ce ON c.id = ce.class_id
+        WHERE c.teacher_id = ?
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+    `;
+    
+    db.all(query, [teacherId], (err, rows) => {
+        if (err) {
+            console.error('Error getting classes:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        res.json(rows);
+    });
+});
+
+// Get attendance records for a specific class (teacher view)
+app.get('/api/get-class-attendance-records', (req, res) => {
+    const { classId, date } = req.query;
+    
+    if (!classId) {
+        return res.status(400).json({ error: 'Class ID is required' });
+    }
+    
+    let query = `
+        SELECT ar.*, u.name as studentName, u.user_id as studentId, c.name as className
+        FROM attendance_records ar
+        JOIN users u ON ar.user_id = u.id
+        JOIN classes c ON ar.class_id = c.id
+        WHERE c.id = ?
+    `;
+    
+    const params = [classId];
+    
+    if (date) {
+        const dateStr = new Date(date).toISOString().split('T')[0];
+        query += ' AND DATE(ar.date) = ?';
+        params.push(dateStr);
+    }
+    
+    query += ' ORDER BY ar.created_at DESC';
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('Error getting attendance records:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        // Format the records properly for teacher view
+        const formattedRecords = rows.map(row => {
+            // Parse date safely
+            let parsedDate = 'Invalid Date';
+            try {
+                if (row.date) {
+                    const dateObj = new Date(row.date);
+                    if (!isNaN(dateObj.getTime())) {
+                        parsedDate = dateObj.toLocaleDateString();
+                    }
+                }
+            } catch (e) {
+                console.log('Date parsing error:', e);
+            }
+
+            // Parse time safely
+            let parsedTimeIn = 'N/A';
+            let parsedTimeOut = 'N/A';
+            try {
+                if (row.time_in) {
+                    const timeInObj = new Date(row.time_in);
+                    if (!isNaN(timeInObj.getTime())) {
+                        parsedTimeIn = timeInObj.toLocaleTimeString();
+                    }
+                }
+                if (row.time_out) {
+                    const timeOutObj = new Date(row.time_out);
+                    if (!isNaN(timeOutObj.getTime())) {
+                        parsedTimeOut = timeOutObj.toLocaleTimeString();
+                    }
+                }
+            } catch (e) {
+                console.log('Time parsing error:', e);
+            }
+
+            return {
+                id: row.id,
+                studentName: row.studentName || 'Unknown Student',
+                studentId: row.studentId || 'N/A',
+                className: row.className || 'Unknown Class',
+                date: parsedDate,
+                timeIn: parsedTimeIn,
+                timeOut: parsedTimeOut,
+                status: row.status || 'Present',
+                locationVerified: row.location_verified || false,
+                latitude: row.latitude,
+                longitude: row.longitude
+            };
+        });
+        
+        res.json(formattedRecords);
+    });
+});
+
+// Enroll a student in a class
+app.post('/api/enroll-student', (req, res) => {
+    const { classCode, userId } = req.body;
+    
+    if (!classCode || !userId) {
+        return res.status(400).json({ error: 'Class code and user ID are required' });
+    }
+    
+    // First get the class
+    db.get('SELECT * FROM classes WHERE code = ?', [classCode.toUpperCase()], (err, classRow) => {
+        if (err) {
+            console.error('Error getting class:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!classRow) {
+            return res.status(404).json({ error: 'Class not found' });
+        }
+        
+        // Check if already enrolled
+        db.get('SELECT * FROM class_enrollments WHERE class_id = ? AND user_id = ?', 
+            [classRow.id, userId], (err, enrollmentRow) => {
+            if (err) {
+                console.error('Error checking enrollment:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            if (enrollmentRow) {
+                return res.status(400).json({ error: 'Student already enrolled in this class' });
+            }
+            
+            // Enroll the student
+            db.run('INSERT INTO class_enrollments (class_id, user_id) VALUES (?, ?)',
+                [classRow.id, userId], function(err) {
+                if (err) {
+                    console.error('Error enrolling student:', err);
+                    return res.status(500).json({ error: 'Database error' });
+                }
+                
+                res.json({
+                    message: 'Student enrolled successfully',
+                    classId: classRow.id,
+                    className: classRow.name
+                });
+            });
+        });
+    });
+});
+
+// Test database connection
+app.get('/api/test-db', (req, res) => {
+    db.get('SELECT 1 as test', (err, row) => {
+        if (err) {
+            console.error('Database test failed:', err);
+            return res.status(500).json({ error: 'Database connection failed', details: err.message });
+        }
+        res.json({ message: 'Database connection successful', test: row.test });
+    });
+});
+
+// Check users table structure
+app.get('/api/check-users-table', (req, res) => {
+    db.all("PRAGMA table_info(users)", (err, rows) => {
+        if (err) {
+            console.error('Error checking users table:', err);
+            return res.status(500).json({ error: 'Failed to check table structure', details: err.message });
+        }
+        res.json({ 
+            message: 'Users table structure', 
+            columns: rows,
+            tableExists: rows.length > 0
+        });
+    });
+});
+
+// Database reset route (for development only)
+app.post('/api/reset-database', (req, res) => {
+    console.log('Resetting database...');
+    
+    db.serialize(() => {
+        // Drop all tables
+        db.run('DROP TABLE IF EXISTS user_faces', (err) => {
+            if (err) console.error('Error dropping user_faces:', err);
+        });
+        
+        db.run('DROP TABLE IF EXISTS class_enrollments', (err) => {
+            if (err) console.error('Error dropping class_enrollments:', err);
+        });
+        
+        db.run('DROP TABLE IF EXISTS classes', (err) => {
+            if (err) console.error('Error dropping classes:', err);
+        });
+        
+        db.run('DROP TABLE IF EXISTS attendance_records', (err) => {
+            if (err) console.error('Error dropping attendance_records:', err);
+        });
+        
+        db.run('DROP TABLE IF EXISTS class_locations', (err) => {
+            if (err) console.error('Error dropping class_locations:', err);
+        });
+        
+        db.run('DROP TABLE IF EXISTS users', (err) => {
+            if (err) console.error('Error dropping users:', err);
+        });
+        
+        // Reinitialize database
+        setTimeout(() => {
+            initializeDatabase();
+            res.json({ message: 'Database reset successfully' });
+        }, 1000);
+    });
 });
 
 // Error handling middleware

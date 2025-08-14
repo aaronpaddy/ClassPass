@@ -1,7 +1,7 @@
 {
-  "name": "facial-recognition-attendance",
+  "name": "classpass-attendance",
   "version": "1.0.0",
-  "description": "AI-powered facial recognition attendance system that automatically tracks attendance using face detection and recognition",
+  "description": "ClassPass - AI-powered attendance management system with facial recognition, location validation, and role-based access for educational institutions",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -31,7 +31,7 @@
     "style-loader": "^3.3.3",
     "file-loader": "^6.2.0"
   },
-  "keywords": ["facial-recognition", "attendance", "ai", "face-detection", "automation"],
+  "keywords": ["classpass", "attendance", "facial-recognition", "ai", "education", "location-validation", "role-based-access", "face-detection"],
   "author": "Your Name",
   "license": "MIT"
 } 
