@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facial Recognition Attendance System</title>
+    <title>ClassPass - Facial Recognition Attendance System</title>
     <link rel="stylesheet" href="attendance-styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
     <script>
         // Fallback if primary CDN fails
         window.addEventListener('load', function() {
@@ -29,18 +30,45 @@
     </script>
 </head>
 <body>
+    <!-- Floating Notification System -->
+    <div id="notificationContainer" class="notification-container"></div>
+    
+    <!-- Modal Dialog System -->
+    <div id="modalOverlay" class="modal-overlay" style="display: none;">
+        <div id="modalContent" class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Notification</h3>
+                <button id="modalClose" class="modal-close">&times;</button>
+            </div>
+            <div id="modalBody" class="modal-body">
+                <!-- Modal content goes here -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Floating Back to Top Button -->
+    <button id="backToTop" class="back-to-top" title="Back to Top">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+    
     <div class="container">
         <header>
-            <h1><i class="fas fa-user-check"></i> Facial Recognition Attendance</h1>
+            <h1><i class="fas fa-user-check"></i> ClassPass</h1>
             <div class="header-controls">
-                <button id="registerBtn" class="btn btn-primary">
-                    <i class="fas fa-user-plus"></i> Register User
+                <button id="backToLandingBtn" class="btn btn-outline">
+                    <i class="fas fa-home"></i> Back to Landing
+                </button>
+                <button id="setupFaceBtn" class="btn btn-primary">
+                    <i class="fas fa-user-plus"></i> Setup Face Recognition
                 </button>
                 <button id="attendanceBtn" class="btn btn-success">
-                    <i class="fas fa-camera"></i> Take Attendance
+                    <i class="fas fa-camera"></i> ClassPass Check-In
                 </button>
                 <button id="viewRecordsBtn" class="btn btn-info">
                     <i class="fas fa-chart-bar"></i> View Records
+                </button>
+                <button id="logoutBtn" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
                 </button>
             </div>
         </header>
@@ -73,25 +101,29 @@
                 </div>
             </div>
 
-            <!-- Registration Form -->
+            <!-- Face Recognition Setup Form -->
             <div class="registration-form" id="registrationForm" style="display: none;">
-                <h2><i class="fas fa-user-plus"></i> Register New User</h2>
+                <h2><i class="fas fa-camera"></i> Setup Face Recognition</h2>
+                <p class="form-description">
+                    <i class="fas fa-info-circle"></i> 
+                    Complete your profile and capture face images for attendance recognition
+                </p>
                 <form id="userForm">
                     <div class="form-group">
                         <label for="name"><i class="fas fa-user"></i> Full Name:</label>
-                        <input type="text" id="name" name="name" required placeholder="Enter full name">
+                        <input type="text" id="name" name="name" required placeholder="Enter your full name">
                     </div>
                     <div class="form-group">
                         <label for="email"><i class="fas fa-envelope"></i> Email:</label>
-                        <input type="email" id="email" name="email" required placeholder="Enter email address">
+                        <input type="email" id="email" name="email" required placeholder="Enter your email address">
                     </div>
                     <div class="form-group">
                         <label for="id"><i class="fas fa-id-card"></i> Student/Employee ID:</label>
-                        <input type="text" id="id" name="id" required placeholder="Enter ID number">
+                        <input type="text" id="id" name="id" required placeholder="Enter your ID number">
                     </div>
                     <div class="form-group">
                         <label for="department"><i class="fas fa-building"></i> Department:</label>
-                        <input type="text" id="department" name="department" required placeholder="Enter department">
+                        <input type="text" id="department" name="department" required placeholder="Enter your department">
                     </div>
                     <div class="captured-faces">
                         <h3><i class="fas fa-images"></i> Captured Face Images</h3>
@@ -103,7 +135,7 @@
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save"></i> Register User
+                            <i class="fas fa-save"></i> Complete Setup
                         </button>
                         <button type="button" class="btn btn-secondary" id="cancelRegistration">
                             <i class="fas fa-times"></i> Cancel
@@ -114,25 +146,62 @@
 
             <!-- Attendance Section -->
             <div class="attendance-section" id="attendanceSection" style="display: none;">
-                <h2><i class="fas fa-clock"></i> Take Attendance</h2>
+                <h2><i class="fas fa-clock"></i> ClassPass Attendance</h2>
                 
-                <!-- Location Selection -->
-                <div class="location-selection">
-                    <h3><i class="fas fa-map-marker-alt"></i> Select Class Location</h3>
-                    <div class="form-group">
-                        <label for="classLocation"><i class="fas fa-building"></i> Class Location:</label>
-                        <select id="classLocation" class="form-control" required>
-                            <option value="">Select a class location...</option>
-                        </select>
-                        <button id="refreshLocations" class="btn btn-secondary btn-sm">
-                            <i class="fas fa-sync-alt"></i> Refresh
-                        </button>
+                <!-- Status Bar - Always Visible -->
+                <div class="status-bar" id="statusBar">
+                    <div class="status-item">
+                        <i class="fas fa-circle status-indicator" id="systemStatus"></i>
+                        <span id="systemStatusText">System Ready</span>
                     </div>
-                    <div class="location-info" id="locationInfo" style="display: none;">
-                        <div class="location-details">
-                            <span class="location-name" id="locationName"></span>
-                            <span class="location-building" id="locationBuilding"></span>
-                            <span class="location-radius" id="locationRadius"></span>
+                    <div class="status-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span id="locationStatus">No Location Selected</span>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-satellite-dish"></i>
+                        <span id="gpsStatusText">GPS Inactive</span>
+                    </div>
+                </div>
+                
+                <!-- Previously Enrolled Classes -->
+                <div class="enrolled-classes" id="enrolledClasses" style="display: none;">
+                    <h3><i class="fas fa-graduation-cap"></i> Your Enrolled Classes</h3>
+                    <div class="enrolled-classes-list" id="enrolledClassesList">
+                        <!-- Enrolled classes will be populated here -->
+                    </div>
+                    <div class="enrolled-classes-divider">
+                        <span>or</span>
+                    </div>
+                </div>
+
+                <!-- Class Code Input -->
+                <div class="class-code-input">
+                    <h3><i class="fas fa-key"></i> Join New Class</h3>
+                    <div class="form-group">
+                        <label for="classCodeInput"><i class="fas fa-key"></i> Class Code:</label>
+                        <div class="code-input-group">
+                            <input type="text" id="classCodeInput" class="form-control" placeholder="e.g., CS101" maxlength="10" style="text-transform: uppercase;">
+                            <button id="joinClassBtn" class="btn btn-primary">
+                                <i class="fas fa-sign-in-alt"></i> Join Class
+                            </button>
+                        </div>
+                        <p class="help-text">
+                            <i class="fas fa-info-circle"></i> 
+                            Enter the class code provided by your teacher to join a new class
+                        </p>
+                    </div>
+                    
+                    <!-- Class Information Display -->
+                    <div class="class-info" id="classInfo" style="display: none;">
+                        <div class="class-card">
+                            <h4><i class="fas fa-chalkboard"></i> <span id="className">Class Name</span></h4>
+                            <div class="class-details">
+                                <p><strong>Code:</strong> <span id="classCodeDisplay">CS101</span></p>
+                                <p><strong>Teacher:</strong> <span id="teacherName">Teacher Name</span></p>
+                                <p><strong>Location:</strong> <span id="classLocation">Location</span></p>
+                                <p><strong>Radius:</strong> <span id="attendanceRadius">30m</span></p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -161,6 +230,32 @@
                     </div>
                 </div>
 
+                <!-- Class Status Section -->
+                <div class="class-status-section" id="classStatusSection">
+                    <h3><i class="fas fa-info-circle"></i> Class Status</h3>
+                    <div class="status-container">
+                        <div class="status-info" id="statusInfo">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Enter a class code to join and start attendance</span>
+                        </div>
+                        <div class="status-controls">
+                            <button id="checkLocationBtn" class="btn btn-primary btn-sm" disabled>
+                                <i class="fas fa-crosshairs"></i> Check My Location
+                            </button>
+                        </div>
+                    </div>
+                    <div class="location-validation" id="locationValidation" style="display: none;">
+                        <div class="validation-status">
+                            <i class="fas fa-check-circle"></i>
+                            <span id="validationMessage">Location verified</span>
+                        </div>
+                        <div class="distance-info">
+                            <span>Distance to class: <strong id="distanceToClass">0</strong>m</span>
+                            <span>Class radius: <strong id="classRadius">0</strong>m</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="attendance-info">
                     <div class="current-time">
                         <i class="fas fa-clock"></i>
@@ -173,44 +268,61 @@
                 </div>
                 <div class="attendance-controls">
                     <button id="startAttendance" class="btn btn-success" disabled>
-                        <i class="fas fa-play"></i> Start Recognition
+                        <i class="fas fa-play"></i> Start ClassPass
                     </button>
                     <button id="stopAttendance" class="btn btn-secondary" disabled>
-                        <i class="fas fa-stop"></i> Stop Recognition
+                        <i class="fas fa-stop"></i> Stop ClassPass
                     </button>
                 </div>
             </div>
 
             <!-- Records Section -->
             <div class="records-section" id="recordsSection" style="display: none;">
-                <h2><i class="fas fa-chart-bar"></i> Attendance Records</h2>
-                <div class="records-controls">
+                <h2><i class="fas fa-chart-bar"></i> My Attendance Records</h2>
+                
+                <!-- Current Class Display -->
+                <div class="current-class-display" id="currentClassDisplay" style="display: none;">
+                    <div class="class-info-card">
+                        <h3><i class="fas fa-chalkboard"></i> Current Class</h3>
+                        <p><strong>Class:</strong> <span id="currentClassName">Not joined</span></p>
+                        <p><strong>Code:</strong> <span id="currentClassCode">-</span></p>
+                        <p><strong>Teacher:</strong> <span id="currentClassTeacher">-</span></p>
+                    </div>
+                </div>
+                
+                <!-- Date Filter -->
+                <div class="date-filter">
+                    <label for="dateFilter"><i class="fas fa-calendar"></i> Filter by Date:</label>
                     <input type="date" id="dateFilter" class="form-control">
-                    <button id="filterRecords" class="btn btn-primary">
+                    <button id="filterRecords" class="btn btn-primary btn-sm">
                         <i class="fas fa-filter"></i> Filter
                     </button>
-                    <button id="exportRecords" class="btn btn-success">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
                 </div>
-                <div class="records-table">
-                    <table id="recordsTable">
+                
+                <!-- Records Table -->
+                <div class="records-table-container">
+                    <table class="records-table" id="recordsTable">
                         <thead>
                             <tr>
-                                <th><i class="fas fa-user"></i> Name</th>
-                                <th><i class="fas fa-id-card"></i> ID</th>
-                                <th><i class="fas fa-building"></i> Department</th>
                                 <th><i class="fas fa-calendar"></i> Date</th>
-                                <th><i class="fas fa-sign-in-alt"></i> Time In</th>
-                                <th><i class="fas fa-sign-out-alt"></i> Time Out</th>
-                                <th><i class="fas fa-check-circle"></i> Status</th>
+                                <th><i class="fas fa-clock"></i> Time In</th>
+                                <th><i class="fas fa-clock"></i> Time Out</th>
+                                <th><i class="fas fa-chalkboard"></i> Class</th>
                                 <th><i class="fas fa-map-marker-alt"></i> Location</th>
-                                <th><i class="fas fa-shield-alt"></i> Verified</th>
+                                <th><i class="fas fa-check-circle"></i> Status</th>
                             </tr>
                         </thead>
                         <tbody id="recordsTableBody">
+                            <!-- Records will be populated here -->
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- Export Controls -->
+                <div class="export-controls">
+                    <button id="exportRecords" class="btn btn-success">
+                        <i class="fas fa-download"></i> Export My Records
+                    </button>
                 </div>
             </div>
         </main>
