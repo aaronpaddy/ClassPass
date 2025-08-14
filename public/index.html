@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClassPass - Smart Attendance System</title>
+    <link rel="stylesheet" href="landing-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="animated-background">
+        <div class="floating-shapes">
+            <div class="shape shape-1"></div>
+            <div class="shape shape-2"></div>
+            <div class="shape shape-3"></div>
+            <div class="shape shape-4"></div>
+            <div class="shape shape-5"></div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Header -->
+        <header class="hero-header">
+            <div class="logo">
+                <i class="fas fa-graduation-cap"></i>
+                <span>ClassPass</span>
+            </div>
+            <h1 class="hero-title">
+                Smart Attendance System
+                <span class="gradient-text">for Modern Education</span>
+            </h1>
+            <p class="hero-subtitle">
+                Facial recognition + GPS validation = Reliable attendance tracking
+            </p>
+        </header>
+
+        <!-- Role Selection -->
+        <div class="role-selection" id="roleSelection">
+            <h2>Choose Your Role</h2>
+            <div class="role-cards">
+                <div class="role-card teacher-card" onclick="selectRole('teacher')">
+                    <div class="role-icon">
+                        <i class="fas fa-chalkboard-teacher"></i>
+                    </div>
+                    <h3>Teacher</h3>
+                    <p>Create classes, manage attendance, view reports</p>
+                    <div class="role-features">
+                        <span><i class="fas fa-check"></i> Create class codes</span>
+                        <span><i class="fas fa-check"></i> Set attendance radius</span>
+                        <span><i class="fas fa-check"></i> View student reports</span>
+                    </div>
+                </div>
+                
+                <div class="role-card student-card" onclick="selectRole('student')">
+                    <div class="role-icon">
+                        <i class="fas fa-user-graduate"></i>
+                    </div>
+                    <h3>Student</h3>
+                    <p>Join classes, mark attendance, track your records</p>
+                    <div class="role-features">
+                        <span><i class="fas fa-check"></i> Join with class codes</span>
+                        <span><i class="fas fa-check"></i> Facial recognition</span>
+                        <span><i class="fas fa-check"></i> Location validation</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login/Register Forms -->
+        <div class="auth-container" id="authContainer" style="display: none;">
+            <!-- Login Form -->
+            <div class="auth-form login-form" id="loginForm">
+                <div class="form-header">
+                    <h2>Welcome Back</h2>
+                    <p>Sign in to your <span id="loginRoleText">account</span></p>
+                </div>
+                
+                <form id="loginFormElement">
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-envelope"></i>
+                            <input type="email" id="loginEmail" required placeholder="Enter your email">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="loginPassword" required placeholder="Enter your password">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Sign In
+                    </button>
+                </form>
+                
+                <div class="form-footer">
+                    <p>Don't have an account? <a href="#" onclick="showRegisterForm()">Create one</a></p>
+                </div>
+            </div>
+
+            <!-- Register Form -->
+            <div class="auth-form register-form" id="registerForm" style="display: none;">
+                <div class="form-header">
+                    <h2>Create Account</h2>
+                    <p>Join ClassPass as a <span id="registerRoleText">user</span></p>
+                </div>
+                
+                <form id="registerFormElement">
+                    <div class="form-group">
+                        <label for="registerName">Full Name</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-user"></i>
+                            <input type="text" id="registerName" required placeholder="Enter your full name">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="registerEmail">Email</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-envelope"></i>
+                            <input type="email" id="registerEmail" required placeholder="Enter your email">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="registerPassword">Password</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="registerPassword" required placeholder="Create a password">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" id="teacherFields" style="display: none;">
+                        <label for="registerDepartment">Department</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-building"></i>
+                            <input type="text" id="registerDepartment" placeholder="Enter your department">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" id="studentFields" style="display: none;">
+                        <label for="registerStudentId">Student ID</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-id-card"></i>
+                            <input type="text" id="registerStudentId" placeholder="Enter your student ID">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">
+                        <i class="fas fa-user-plus"></i>
+                        Create Account
+                    </button>
+                </form>
+                
+                <div class="form-footer">
+                    <p>Already have an account? <a href="#" onclick="showLoginForm()">Sign in</a></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Back Button -->
+        <div class="back-button" id="backButton" style="display: none;" onclick="goBack()">
+            <i class="fas fa-arrow-left"></i>
+            <span>Back to Role Selection</span>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <script src="landing.js"></script>
+</body>
+</html>
